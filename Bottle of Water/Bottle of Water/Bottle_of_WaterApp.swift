@@ -11,7 +11,7 @@ import SwiftUI
 struct Bottle_of_WaterApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
 }
@@ -19,7 +19,7 @@ struct Bottle_of_WaterApp: App {
 struct MainView: View {
     var body: some View {
         VStack {
-            Image("bottle")  // Your custom image from Assets
+            Image("bottle")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 150, height: 150)

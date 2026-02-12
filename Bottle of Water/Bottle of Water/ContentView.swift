@@ -10,7 +10,7 @@ import Combine
 
 // MARK: - Root
 
-struct ContentView: View {
+struct RootView: View {
     @State private var selectedTab: TabItem = .home
 
     var body: some View {
@@ -123,7 +123,6 @@ struct StatisticsView: View {
 
 // MARK: - Water Drop Character
 
-// Character mood/state
 enum CharacterMood {
     case happy
     case thirsty
@@ -138,23 +137,17 @@ struct WaterDropImageView: View {
     var speed: CGFloat
 
     @State private var phase: CGFloat = 0
-    
-    // Body animations
     @State private var isFloating = false
     @State private var isBreathing = false
     @State private var isWobbling = false
     @State private var isTapped = false
-    
-    // Face animations
-    @State private var isBlinking = false
     @State private var eyesClosed = false
     @State private var mouthOpen: CGFloat = 0
     @State private var currentMood: CharacterMood = .happy
     @State private var isThirsty = false
     @State private var isDrinking = false
-    @State private var lookDirection: CGFloat = 0 // -1 left, 0 center, 1 right
-    
-    // Timers
+    @State private var lookDirection: CGFloat = 0
+
     let blinkTimer = Timer.publish(every: 3.0, on: .main, in: .common).autoconnect()
     let moodTimer = Timer.publish(every: 8.0, on: .main, in: .common).autoconnect()
     let lookTimer = Timer.publish(every: 2.0, on: .main, in: .common).autoconnect()
@@ -162,9 +155,7 @@ struct WaterDropImageView: View {
     var body: some View {
         GeometryReader { geo in
             let faceCenter = CGPoint(x: geo.size.width / 2, y: geo.size.height * 0.45)
-            
             ZStack {
-                // Water drop body shape
                 WaterDropBodyShape()
                     .fill(
                         LinearGradient(
@@ -178,7 +169,6 @@ struct WaterDropImageView: View {
                         )
                     )
                     .overlay(
-                        // Highlight/shine effect
                         WaterDropBodyShape()
                             .fill(
                                 LinearGradient(
@@ -193,7 +183,6 @@ struct WaterDropImageView: View {
                             )
                     )
                     .overlay(
-                        // Inner glow
                         WaterDropBodyShape()
                             .stroke(
                                 LinearGradient(
@@ -208,28 +197,14 @@ struct WaterDropImageView: View {
                             )
                     )
                     .shadow(color: .cyan.opacity(0.3), radius: 10, x: 0, y: 5)
-                
-                // Animated face overlay
+
                 ZStack {
-                    // Eyes
                     HStack(spacing: geo.size.width * 0.18) {
-                        // Left eye
-                        EyeView(
-                            isClosed: eyesClosed,
-                            lookDirection: lookDirection,
-                            size: geo.size.width * 0.14
-                        )
-                        
-                        // Right eye
-                        EyeView(
-                            isClosed: eyesClosed,
-                            lookDirection: lookDirection,
-                            size: geo.size.width * 0.14
-                        )
+                        EyeView(isClosed: eyesClosed, lookDirection: lookDirection, size: geo.size.width * 0.14)
+                        EyeView(isClosed: eyesClosed, lookDirection: lookDirection, size: geo.size.width * 0.14)
                     }
                     .offset(y: -geo.size.height * 0.02)
-                    
-                    // Mouth
+
                     MouthView(
                         mood: currentMood,
                         openAmount: mouthOpen,
@@ -237,15 +212,13 @@ struct WaterDropImageView: View {
                         height: geo.size.width * 0.12
                     )
                     .offset(y: geo.size.height * 0.1)
-                    
-                    // Thirsty sweat drop
+
                     if isThirsty {
                         SweatDropView(size: geo.size.width * 0.06)
                             .offset(x: geo.size.width * 0.28, y: -geo.size.height * 0.08)
                             .transition(.opacity.combined(with: .scale))
                     }
-                    
-                    // Drinking water drops (when drinking)
+
                     if isDrinking {
                         DrinkingDropsView(size: geo.size.width * 0.05)
                             .offset(y: geo.size.height * 0.18)
@@ -254,67 +227,42 @@ struct WaterDropImageView: View {
                 .position(faceCenter)
             }
         }
-        // Body animations
         .offset(y: isFloating ? -6 : 6)
         .scaleEffect(isBreathing ? 1.02 : 0.98)
         .rotationEffect(.degrees(isWobbling ? 1.5 : -1.5))
         .scaleEffect(isTapped ? 0.92 : 1.0)
-        .onTapGesture {
-            triggerDrinking()
-        }
-        .onAppear {
-            startAnimations()
-        }
-        .onReceive(blinkTimer) { _ in
-            triggerBlink()
-        }
-        .onReceive(moodTimer) { _ in
-            triggerRandomMood()
-        }
-        .onReceive(lookTimer) { _ in
-            triggerRandomLook()
-        }
+        .onTapGesture { triggerDrinking() }
+        .onAppear { startAnimations() }
+        .onReceive(blinkTimer) { _ in triggerBlink() }
+        .onReceive(moodTimer) { _ in triggerRandomMood() }
+        .onReceive(lookTimer) { _ in triggerRandomLook() }
     }
-    
-    // MARK: - Animation Triggers
-    
+
     private func startAnimations() {
-        // Wave animation
         withAnimation(.linear(duration: 1 / max(speed, 0.1)).repeatForever(autoreverses: false)) {
             phase = .pi * 2
         }
-        
-        // Floating
         withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
             isFloating = true
         }
-        
-        // Breathing
         withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
             isBreathing = true
         }
-        
-        // Wobble
         withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
             isWobbling = true
         }
     }
-    
+
     private func triggerBlink() {
-        // Random chance to blink (80% chance)
         guard Bool.random() || Bool.random() else { return }
-        
         withAnimation(.easeInOut(duration: 0.1)) {
             eyesClosed = true
         }
-        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.easeInOut(duration: 0.1)) {
                 eyesClosed = false
             }
         }
-        
-        // Sometimes double blink
         if Bool.random() && Bool.random() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 withAnimation(.easeInOut(duration: 0.1)) {
@@ -328,21 +276,16 @@ struct WaterDropImageView: View {
             }
         }
     }
-    
+
     private func triggerRandomMood() {
-        // 30% chance to become thirsty
         if Int.random(in: 0...10) < 3 {
             withAnimation(.easeInOut(duration: 0.3)) {
                 isThirsty = true
                 currentMood = .thirsty
             }
-            
-            // Open mouth slightly when thirsty
             withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
                 mouthOpen = 0.3
             }
-            
-            // Return to normal after a few seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     isThirsty = false
@@ -352,37 +295,29 @@ struct WaterDropImageView: View {
             }
         }
     }
-    
+
     private func triggerRandomLook() {
         let directions: [CGFloat] = [-1, -0.5, 0, 0.5, 1]
         withAnimation(.easeInOut(duration: 0.3)) {
             lookDirection = directions.randomElement() ?? 0
         }
     }
-    
+
     private func triggerDrinking() {
-        // Bounce effect
         withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
             isTapped = true
         }
-        
-        // Start drinking animation
         withAnimation(.easeInOut(duration: 0.2)) {
             isDrinking = true
             currentMood = .drinking
             isThirsty = false
         }
-        
-        // Mouth opens and closes while drinking
         drinkingMouthAnimation()
-        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
                 isTapped = false
             }
         }
-        
-        // Stop drinking after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             withAnimation(.easeInOut(duration: 0.3)) {
                 isDrinking = false
@@ -391,9 +326,8 @@ struct WaterDropImageView: View {
             }
         }
     }
-    
+
     private func drinkingMouthAnimation() {
-        // Gulp animation - mouth opens and closes repeatedly
         for i in 0..<4 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.4) {
                 withAnimation(.easeInOut(duration: 0.15)) {
@@ -410,27 +344,25 @@ struct WaterDropImageView: View {
 }
 
 // MARK: - Eye View
+
 struct EyeView: View {
     var isClosed: Bool
     var lookDirection: CGFloat
     var size: CGFloat
-    
+
     var body: some View {
         ZStack {
-            // Eye white
             Ellipse()
                 .fill(.white)
                 .frame(width: size, height: isClosed ? size * 0.1 : size * 0.9)
                 .shadow(color: .black.opacity(0.1), radius: 2, x: 0, y: 1)
-            
-            // Pupil (hidden when closed)
+
             if !isClosed {
                 Circle()
                     .fill(.black)
                     .frame(width: size * 0.45, height: size * 0.45)
                     .offset(x: lookDirection * size * 0.15, y: size * 0.05)
-                
-                // Eye shine
+
                 Circle()
                     .fill(.white.opacity(0.8))
                     .frame(width: size * 0.15, height: size * 0.15)
@@ -442,27 +374,23 @@ struct EyeView: View {
 }
 
 // MARK: - Mouth View
+
 struct MouthView: View {
     var mood: CharacterMood
-    var openAmount: CGFloat // 0 = closed, 1 = fully open
+    var openAmount: CGFloat
     var width: CGFloat
     var height: CGFloat
-    
+
     var body: some View {
         ZStack {
             switch mood {
             case .happy:
                 HappyMouth(width: width, height: height)
-                
             case .thirsty:
                 OpenMouth(width: width, height: height * (0.5 + openAmount))
-                
             case .drinking:
-                // Drinking mouth (O shape)
                 DrinkingMouth(width: width * 0.6, height: height * (0.3 + openAmount * 0.7))
-                
             case .sleepy:
-                // Sleepy/neutral mouth
                 SleepyMouth(width: width, height: height)
             }
         }
@@ -474,7 +402,7 @@ struct MouthView: View {
 struct HappyMouth: View {
     var width: CGFloat
     var height: CGFloat
-    
+
     var body: some View {
         Path { path in
             path.move(to: CGPoint(x: 0, y: 0))
@@ -491,7 +419,7 @@ struct HappyMouth: View {
 struct OpenMouth: View {
     var width: CGFloat
     var height: CGFloat
-    
+
     var body: some View {
         Ellipse()
             .fill(Color.black.opacity(0.8))
@@ -508,15 +436,12 @@ struct OpenMouth: View {
 struct DrinkingMouth: View {
     var width: CGFloat
     var height: CGFloat
-    
+
     var body: some View {
         ZStack {
-            // Mouth hole
             Ellipse()
                 .fill(Color.black.opacity(0.85))
                 .frame(width: width, height: max(height, 8))
-            
-            // Inner pink
             Ellipse()
                 .fill(Color.pink.opacity(0.5))
                 .frame(width: width * 0.6, height: max(height * 0.5, 4))
@@ -527,7 +452,7 @@ struct DrinkingMouth: View {
 struct SleepyMouth: View {
     var width: CGFloat
     var height: CGFloat
-    
+
     var body: some View {
         Capsule()
             .fill(Color.black)
@@ -535,30 +460,91 @@ struct SleepyMouth: View {
     }
 }
 
-// MARK: - Sweat Drop (Thirsty indicator)
+// MARK: - Sweat Drop View
+
+private struct SweatDropShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        let top = CGPoint(x: w / 2, y: 0)
+        let left = CGPoint(x: 0, y: h * 0.6)
+        let right = CGPoint(x: w, y: h * 0.6)
+
+        path.move(to: top)
+        path.addQuadCurve(to: right, control: CGPoint(x: w, y: h * 0.15))
+        path.addQuadCurve(to: left, control: CGPoint(x: w / 2, y: h))
+        path.addQuadCurve(to: top, control: CGPoint(x: 0, y: h * 0.15))
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct SweatDropView: View {
     var size: CGFloat
-    @State private var isAnimating = false
-    
+    @State private var wiggle: CGFloat = 0
+
     var body: some View {
-        Image(systemName: "drop.fill")
-            .font(.system(size: size))
-            .foregroundColor(.cyan.opacity(0.7))
-            .offset(y: isAnimating ? 5 : 0)
-            .opacity(isAnimating ? 0.5 : 1)
+        SweatDropShape()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.cyan.opacity(0.9),
+                        Color.blue.opacity(0.8),
+                        Color.cyan.opacity(0.7)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay(
+                SweatDropShape()
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.7),
+                                Color.white.opacity(0.2)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .overlay(
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.7),
+                                Color.white.opacity(0.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: size * 0.25, height: size * 0.25)
+                    .offset(x: -size * 0.15, y: -size * 0.05)
+                    .blur(radius: size * 0.05)
+                    .opacity(0.9)
+            )
+            .frame(width: size, height: size * 1.4)
+            .rotationEffect(.degrees(Double(sin(wiggle) * 6)))
+            .offset(y: sin(wiggle * 0.8) * (size * 0.06))
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    isAnimating = true
+                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                    wiggle = .pi * 2
                 }
             }
     }
 }
 
-// MARK: - Drinking Water Drops
+// MARK: - Drinking Drops View
+
 struct DrinkingDropsView: View {
     var size: CGFloat
     @State private var drops: [Bool] = [false, false, false]
-    
+
     var body: some View {
         HStack(spacing: size * 0.5) {
             ForEach(0..<3, id: \.self) { index in
@@ -573,7 +559,7 @@ struct DrinkingDropsView: View {
             animateDrops()
         }
     }
-    
+
     private func animateDrops() {
         for i in 0..<3 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.2) {
@@ -587,8 +573,6 @@ struct DrinkingDropsView: View {
                 }
             }
         }
-        
-        // Repeat the animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             animateDrops()
         }
@@ -596,55 +580,34 @@ struct DrinkingDropsView: View {
 }
 
 // MARK: - Water Drop Body Shape
+
 struct WaterDropBodyShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        
+
         let width = rect.width
         let height = rect.height
-        
-        // Start at the top point of the drop
+
         let topPoint = CGPoint(x: width / 2, y: 0)
-        
-        // Control points for the curved sides
         let leftTopControl = CGPoint(x: width * 0.1, y: height * 0.25)
         let leftBottomControl = CGPoint(x: -width * 0.05, y: height * 0.65)
         let bottomLeft = CGPoint(x: width * 0.15, y: height * 0.85)
-        
         let rightTopControl = CGPoint(x: width * 0.9, y: height * 0.25)
         let rightBottomControl = CGPoint(x: width * 1.05, y: height * 0.65)
         let bottomRight = CGPoint(x: width * 0.85, y: height * 0.85)
-        
-        // Bottom center
         let bottomCenter = CGPoint(x: width / 2, y: height)
-        
+
         path.move(to: topPoint)
-        
-        // Left side curve
-        path.addCurve(
-            to: bottomLeft,
-            control1: leftTopControl,
-            control2: leftBottomControl
-        )
-        
-        // Bottom curve (rounded bottom)
-        path.addQuadCurve(
-            to: bottomRight,
-            control: bottomCenter
-        )
-        
-        // Right side curve (back to top)
-        path.addCurve(
-            to: topPoint,
-            control1: rightBottomControl,
-            control2: rightTopControl
-        )
-        
+        path.addCurve(to: bottomLeft, control1: leftTopControl, control2: leftBottomControl)
+        path.addQuadCurve(to: bottomRight, control: bottomCenter)
+        path.addCurve(to: topPoint, control1: rightBottomControl, control2: rightTopControl)
         path.closeSubpath()
-        
+
         return path
     }
 }
+
+// MARK: - Wave Shape
 
 struct WaveShape: Shape {
     var phase: CGFloat
@@ -683,5 +646,5 @@ struct WaveShape: Shape {
 // MARK: - Preview
 
 #Preview {
-    ContentView()
+    RootView()
 }

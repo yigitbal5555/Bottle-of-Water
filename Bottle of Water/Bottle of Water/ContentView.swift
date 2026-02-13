@@ -47,9 +47,42 @@ struct RootView: View {
     }
 }
 
+// MARK: - Daily Water Goal Store (persisted per-date goals)
+
+struct WaterGoalStore {
+    private static let prefix = "dailyWaterGoal_"
+    private static let defaultGlasses = 8
+    private static let glassVolumeML = 250
+    
+    static func key(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return prefix + formatter.string(from: Calendar.current.startOfDay(for: date))
+    }
+    
+    static func goal(for date: Date) -> Int {
+        let value = UserDefaults.standard.object(forKey: key(for: date)) as? Int
+        return value ?? defaultGlasses
+    }
+    
+    static func setGoal(_ glasses: Int, for date: Date) {
+        let clamped = max(1, min(20, glasses))
+        UserDefaults.standard.set(clamped, forKey: key(for: date))
+        NotificationCenter.default.post(name: .waterGoalDidChange, object: nil)
+    }
+    
+    static var glassVolume: Int { glassVolumeML }
+}
+
+extension Notification.Name {
+    static let waterGoalDidChange = Notification.Name("waterGoalDidChange")
+}
+
 // MARK: - Home
 
 struct HomeView: View {
+    @State private var todayGoal: Int = WaterGoalStore.goal(for: Date())
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Bottle of Water")
@@ -61,10 +94,53 @@ struct HomeView: View {
                 .frame(width: 220, height: 320)
                 .frame(maxWidth: .infinity)
             
+            // Daily water goal (synced from Calendar)
+            TodayGoalBadge(goal: todayGoal)
+                .padding(.top, 8)
+            
             Spacer()
         }
         .padding()
         .padding(.top, 20)
+        .onAppear {
+            todayGoal = WaterGoalStore.goal(for: Date())
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .waterGoalDidChange)) { _ in
+            todayGoal = WaterGoalStore.goal(for: Date())
+        }
+    }
+}
+
+// MARK: - Today Goal Badge (under character on Home)
+
+struct TodayGoalBadge: View {
+    let goal: Int
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "drop.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.cyan)
+            Text("Today's goal:")
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+            Text("\(goal) glasses")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundColor(.blue)
+            Text("(≈ \(goal * WaterGoalStore.glassVolume) ml)")
+                .font(.system(size: 13, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.blue.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -73,12 +149,10 @@ struct HomeView: View {
 struct CalendarView: View {
     @State private var selectedDate = Date()
     @State private var currentMonth = Date()
+    @State private var goalForSelectedDate: Int = 8
     
     private let calendar = Calendar.current
     private let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    
-    // Default daily water goal (glasses). Could later come from user settings.
-    private let dailyWaterGoalGlasses = 8
     private let glassVolumeML = 250
     
     var body: some View {
@@ -137,6 +211,7 @@ struct CalendarView: View {
                                 ) {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         selectedDate = date
+                                        goalForSelectedDate = WaterGoalStore.goal(for: date)
                                     }
                                 }
                             } else {
@@ -157,17 +232,25 @@ struct CalendarView: View {
                         .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
                 )
                 
-                // Water goal for selected day
+                // Water goal for selected day (editable: tap day then set goal)
                 WaterGoalCardView(
                     date: selectedDate,
-                    goalGlasses: dailyWaterGoalGlasses,
-                    glassVolumeML: glassVolumeML
+                    goalGlasses: goalForSelectedDate,
+                    glassVolumeML: glassVolumeML,
+                    isEditable: true,
+                    onGoalChange: { newGoal in
+                        goalForSelectedDate = newGoal
+                        WaterGoalStore.setGoal(newGoal, for: selectedDate)
+                    }
                 )
                 
                 Spacer(minLength: 24)
             }
             .padding()
             .padding(.top, 12)
+        }
+        .onAppear {
+            goalForSelectedDate = WaterGoalStore.goal(for: selectedDate)
         }
     }
     
@@ -274,6 +357,8 @@ struct WaterGoalCardView: View {
     let date: Date
     let goalGlasses: Int
     let glassVolumeML: Int
+    var isEditable: Bool = false
+    var onGoalChange: ((Int) -> Void)?
     
     private var dateString: String {
         let formatter = DateFormatter()
@@ -303,13 +388,49 @@ struct WaterGoalCardView: View {
                 .foregroundColor(.secondary)
             
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(goalGlasses)")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.blue)
-                    Text("glasses")
-                        .font(.system(size: 18, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
+                if isEditable, let onGoalChange = onGoalChange {
+                    // Editable: stepper to set goal
+                    HStack(alignment: .center, spacing: 16) {
+                        Button(action: {
+                            let newValue = max(1, goalGlasses - 1)
+                            onGoalChange(newValue)
+                        }) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue.opacity(goalGlasses > 1 ? 0.9 : 0.4))
+                        }
+                        .disabled(goalGlasses <= 1)
+                        
+                        VStack(spacing: 2) {
+                            Text("\(goalGlasses)")
+                                .font(.system(size: 36, weight: .bold, design: .rounded))
+                                .foregroundColor(.blue)
+                            Text("glasses")
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(minWidth: 80)
+                        
+                        Button(action: {
+                            let newValue = min(20, goalGlasses + 1)
+                            onGoalChange(newValue)
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.blue.opacity(goalGlasses < 20 ? 0.9 : 0.4))
+                        }
+                        .disabled(goalGlasses >= 20)
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(goalGlasses)")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundColor(.blue)
+                        Text("glasses")
+                            .font(.system(size: 18, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 Text("≈ \(goalGlasses * glassVolumeML) ml")
@@ -326,6 +447,12 @@ struct WaterGoalCardView: View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(Color.blue.opacity(0.2), lineWidth: 1)
             )
+            
+            if isEditable {
+                Text("This goal is shown on the Home screen for that day.")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)

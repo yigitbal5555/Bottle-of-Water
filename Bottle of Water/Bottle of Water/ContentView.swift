@@ -12,6 +12,8 @@ import Combine
 
 struct RootView: View {
     @State private var selectedTab: TabItem = .home
+    @State private var showSettings = false
+    @State private var showWaterMoments = false
 
     var body: some View {
         ZStack {
@@ -23,7 +25,10 @@ struct RootView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                HeaderView()
+                HeaderView(
+                    onSettingsTap: { showSettings = true },
+                    onNotificationsTap: { showWaterMoments = true }
+                )
 
                 Group {
                     switch selectedTab {
@@ -43,6 +48,12 @@ struct RootView: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 6)
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(onDismiss: { showSettings = false })
+        }
+        .sheet(isPresented: $showWaterMoments) {
+            WaterMomentsView(onDismiss: { showWaterMoments = false })
         }
     }
 }
@@ -76,44 +87,120 @@ struct WaterGoalStore {
 
 extension Notification.Name {
     static let waterGoalDidChange = Notification.Name("waterGoalDidChange")
+    static let waterIntakeDidChange = Notification.Name("waterIntakeDidChange")
 }
 
 // MARK: - Home
 
 struct HomeView: View {
     @State private var todayGoal: Int = WaterGoalStore.goal(for: Date())
+    @State private var todayGlasses: Int = WaterIntakeStore.glasses(for: Date())
+    @State private var lastLogHaptic = Date()
+    @State private var showFeelingSheet = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Bottle of Water")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundColor(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            WaterDropCharacterView()
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Bottle of Water")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Tap mascot or use +1 button to log water
+                WaterDropCharacterView(
+                    currentGlasses: todayGlasses,
+                    goalGlasses: todayGoal,
+                    onLogWater: logWater
+                )
                 .frame(width: 220, height: 320)
                 .frame(maxWidth: .infinity)
-            
-            // Daily water goal (synced from Calendar)
-            TodayGoalBadge(goal: todayGoal)
+                
+                // Progress counter + One-tap add button
+                HStack(spacing: 16) {
+                    ProgressCounterBadge(current: todayGlasses, goal: todayGoal)
+                    Button(action: logWater) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 24))
+                            Text("Add glass")
+                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.cyan, Color.blue],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
                 .padding(.top, 8)
-            
-            Spacer()
+                
+                // How do you feel? (body-based guidance)
+                Button(action: { showFeelingSheet = true }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "heart.text.square.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.pink.opacity(0.8))
+                        Text("How do you feel?")
+                            .font(.system(size: 15, weight: .medium, design: .rounded))
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.pink.opacity(0.06))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.pink.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                
+                Spacer(minLength: 24)
+            }
+            .padding()
+            .padding(.top, 20)
         }
-        .padding()
-        .padding(.top, 20)
         .onAppear {
             todayGoal = WaterGoalStore.goal(for: Date())
+            todayGlasses = WaterIntakeStore.glasses(for: Date())
         }
         .onReceive(NotificationCenter.default.publisher(for: .waterGoalDidChange)) { _ in
             todayGoal = WaterGoalStore.goal(for: Date())
         }
+        .onReceive(NotificationCenter.default.publisher(for: .waterIntakeDidChange)) { _ in
+            todayGlasses = WaterIntakeStore.glasses(for: Date())
+        }
+        .sheet(isPresented: $showFeelingSheet) {
+            BodyFeelingSheet(onDismiss: { showFeelingSheet = false })
+        }
+    }
+    
+    private func logWater() {
+        WaterIntakeStore.addGlass(for: Date())
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
     }
 }
 
-// MARK: - Today Goal Badge (under character on Home)
+// MARK: - Progress Counter Badge (current / goal on Home)
 
-struct TodayGoalBadge: View {
+struct ProgressCounterBadge: View {
+    let current: Int
     let goal: Int
     
     var body: some View {
@@ -121,14 +208,14 @@ struct TodayGoalBadge: View {
             Image(systemName: "drop.fill")
                 .font(.system(size: 18))
                 .foregroundColor(.cyan)
-            Text("Today's goal:")
-                .font(.system(size: 15, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
-            Text("\(goal) glasses")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+            Text("\(current) / \(goal)")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundColor(.blue)
-            Text("(≈ \(goal * WaterGoalStore.glassVolume) ml)")
-                .font(.system(size: 13, weight: .regular, design: .rounded))
+            Text("glasses")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+            Text("(≈ \(goal * WaterGoalStore.glassVolume) ml goal)")
+                .font(.system(size: 12, weight: .regular, design: .rounded))
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal, 16)
@@ -471,23 +558,49 @@ struct WaterGoalCardView: View {
 // MARK: - Limitize
 
 struct LimitItem: Identifiable {
-    let id = UUID()
+    let id: String
     let name: String
     var progress: Double // 0...1
     let color: Color
 }
 
+struct CoffeeLimitStore {
+    private static let keyPrefix = "coffeeLimit_"
+    
+    static func count(for id: String, date: Date = Date()) -> Int {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateKey = formatter.string(from: Calendar.current.startOfDay(for: date))
+        let key = keyPrefix + id + "_" + dateKey
+        return UserDefaults.standard.integer(forKey: key)
+    }
+    
+    static func addOne(for id: String, date: Date = Date()) {
+        let c = count(for: id, date: date)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateKey = formatter.string(from: Calendar.current.startOfDay(for: date))
+        let key = keyPrefix + id + "_" + dateKey
+        UserDefaults.standard.set(min(10, c + 1), forKey: key)
+    }
+    
+    static func progress(for id: String, maxCups: Int = 3, date: Date = Date()) -> Double {
+        min(1, Double(count(for: id, date: date)) / Double(maxCups))
+    }
+}
+
 struct LimitizeView: View {
     @State private var limits: [LimitItem] = [
-        LimitItem(name: "Espresso", progress: 0.6, color: Color.brown),
-        LimitItem(name: "Turkish Coffee", progress: 0.4, color: Color(red: 0.4, green: 0.26, blue: 0.13)),
-        LimitItem(name: "Americano", progress: 0.75, color: Color(red: 0.55, green: 0.35, blue: 0.2)),
-        LimitItem(name: "Decaf Coffee", progress: 0.3, color: Color(red: 0.6, green: 0.45, blue: 0.3)),
-        LimitItem(name: "Latte", progress: 0.9, color: Color(red: 0.87, green: 0.72, blue: 0.53)),
-        LimitItem(name: "Cappuccino", progress: 0.5, color: Color(red: 0.76, green: 0.6, blue: 0.42)),
-        LimitItem(name: "Mocha", progress: 0.65, color: Color(red: 0.45, green: 0.28, blue: 0.18)),
-        LimitItem(name: "Flat White", progress: 0.55, color: Color(red: 0.82, green: 0.68, blue: 0.5)),
+        LimitItem(id: "espresso", name: "Espresso", progress: 0.6, color: Color.brown),
+        LimitItem(id: "turkish", name: "Turkish Coffee", progress: 0.4, color: Color(red: 0.4, green: 0.26, blue: 0.13)),
+        LimitItem(id: "americano", name: "Americano", progress: 0.75, color: Color(red: 0.55, green: 0.35, blue: 0.2)),
+        LimitItem(id: "decaf", name: "Decaf Coffee", progress: 0.3, color: Color(red: 0.6, green: 0.45, blue: 0.3)),
+        LimitItem(id: "latte", name: "Latte", progress: 0.9, color: Color(red: 0.87, green: 0.72, blue: 0.53)),
+        LimitItem(id: "cappuccino", name: "Cappuccino", progress: 0.5, color: Color(red: 0.76, green: 0.6, blue: 0.42)),
+        LimitItem(id: "mocha", name: "Mocha", progress: 0.65, color: Color(red: 0.45, green: 0.28, blue: 0.18)),
+        LimitItem(id: "flatwhite", name: "Flat White", progress: 0.55, color: Color(red: 0.82, green: 0.68, blue: 0.5)),
     ]
+    @State private var showWaterChaserAlert = false
     
     private let columns = [
         GridItem(.flexible(), spacing: 16),
@@ -502,13 +615,16 @@ struct LimitizeView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
-                Text("Daily limits")
+                Text("Tap to log coffee. Balance with water!")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary.opacity(0.9))
                 
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(limits) { item in
-                        CircleProgressLimitCard(item: item)
+                        CircleProgressLimitCard(item: item, onTap: {
+                            CoffeeLimitStore.addOne(for: item.id)
+                            showWaterChaserAlert = true
+                        })
                     }
                 }
                 
@@ -517,6 +633,27 @@ struct LimitizeView: View {
             .padding()
             .padding(.top, 12)
         }
+        .onAppear {
+            limits = limits.map { item in
+                LimitItem(id: item.id, name: item.name, progress: CoffeeLimitStore.progress(for: item.id), color: item.color)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .waterIntakeDidChange)) { _ in }
+        .onChange(of: showWaterChaserAlert) { _, isShowing in
+            if !isShowing {
+                limits = limits.map { item in
+                    LimitItem(id: item.id, name: item.name, progress: CoffeeLimitStore.progress(for: item.id), color: item.color)
+                }
+            }
+        }
+        .alert("Water chaser?", isPresented: $showWaterChaserAlert) {
+            Button("Add water") {
+                WaterIntakeStore.addGlass(for: Date())
+            }
+            Button("Maybe later", role: .cancel) { }
+        } message: {
+            Text("Balance coffee with a glass of water. It helps hydration!")
+        }
     }
 }
 
@@ -524,6 +661,7 @@ struct LimitizeView: View {
 
 struct CircleProgressLimitCard: View {
     let item: LimitItem
+    var onTap: (() -> Void)? = nil
     @State private var animatedProgress: Double = 0
     
     var body: some View {
@@ -572,9 +710,18 @@ struct CircleProgressLimitCard: View {
                 )
                 .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
+        }
         .onAppear {
             withAnimation(.easeOut(duration: 0.8)) {
                 animatedProgress = item.progress
+            }
+        }
+        .onChange(of: item.progress) { _, newVal in
+            withAnimation(.easeOut(duration: 0.4)) {
+                animatedProgress = newVal
             }
         }
     }
@@ -588,14 +735,25 @@ struct WaterIntakeStore {
     static let glassesPerDayKey = "waterIntakeGlasses"
     
     /// Returns glasses of water for the given day (start of day as key).
+    /// For today: returns stored value or 0. For past: uses sample data when no stored value.
     static func glasses(for date: Date) -> Int {
         let key = Calendar.current.startOfDay(for: date)
-        return UserDefaults.standard.object(forKey: keyString(key)) as? Int ?? sampleGlasses(for: key)
+        if let value = UserDefaults.standard.object(forKey: keyString(key)) as? Int { return value }
+        let cal = Calendar.current
+        if cal.isDateInToday(key) { return 0 }
+        return sampleGlasses(for: key)
     }
     
     static func setGlasses(_ value: Int, for date: Date) {
         let key = Calendar.current.startOfDay(for: date)
-        UserDefaults.standard.set(value, forKey: keyString(key))
+        UserDefaults.standard.set(max(0, min(99, value)), forKey: keyString(key))
+        NotificationCenter.default.post(name: .waterIntakeDidChange, object: nil)
+    }
+    
+    /// Add one glass for the given date (convenience for one-tap logging).
+    static func addGlass(for date: Date) {
+        let current = glasses(for: date)
+        setGlasses(current + 1, for: date)
     }
     
     private static func keyString(_ date: Date) -> String {
@@ -625,6 +783,262 @@ struct WaterIntakeStore {
             current = cal.date(byAdding: .day, value: 1, to: current) ?? current
         }
         return total
+    }
+    
+    /// Days in the past N days where goal was met.
+    static func daysGoalMet(days: Int) -> Int {
+        let cal = Calendar.current
+        var count = 0
+        var current = cal.startOfDay(for: Date())
+        for _ in 0..<days {
+            let g = WaterGoalStore.goal(for: current)
+            let intake = glasses(for: current)
+            if intake >= g { count += 1 }
+            current = cal.date(byAdding: .day, value: -1, to: current) ?? current
+        }
+        return count
+    }
+}
+
+// MARK: - Routines Store (Water moments: Morning, Post-workout, Before bed, etc.)
+
+struct RoutineItem: Identifiable {
+    let id: String
+    var name: String
+    var prompt: String
+    var isEnabled: Bool
+}
+
+struct RoutinesStore {
+    private static let key = "waterRoutines"
+    
+    static var routines: [RoutineItem] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: key),
+                  let decoded = try? JSONDecoder().decode([RoutineItem].self, from: data) else {
+                return defaultRoutines
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: key)
+            }
+        }
+    }
+    
+    private static var defaultRoutines: [RoutineItem] {
+        [
+            RoutineItem(id: "morning", name: "Morning", prompt: "Start your day with a glass of water", isEnabled: true),
+            RoutineItem(id: "after_coffee", name: "After coffee", prompt: "Balance coffee with a glass of water", isEnabled: true),
+            RoutineItem(id: "before_bed", name: "Before bed", prompt: "A small sip before sleep supports rest", isEnabled: true),
+            RoutineItem(id: "post_workout", name: "Post-workout", prompt: "Replenish after exercise", isEnabled: true),
+            RoutineItem(id: "afternoon", name: "Afternoon slump", prompt: "Water can help when you feel foggy", isEnabled: true),
+        ]
+    }
+    
+    static func toggle(id: String) {
+        var items = routines
+        if let i = items.firstIndex(where: { $0.id == id }) {
+            items[i].isEnabled.toggle()
+            routines = items
+        }
+    }
+}
+
+extension RoutineItem: Codable {}
+
+// MARK: - Water Moments View (contextual prompts - bell opens this)
+
+struct WaterMomentsView: View {
+    var onDismiss: (() -> Void)? = nil
+    @Environment(\.dismiss) private var dismiss
+    @State private var routines: [RoutineItem] = RoutinesStore.routines
+    
+    private func done() {
+        RoutinesStore.routines = routines
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            dismiss()
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Water Moments")
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Contextual reminders instead of generic \"drink water\" nudges.")
+                        .font(.system(size: 14, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
+                    
+                    VStack(spacing: 12) {
+                        ForEach(routines.indices, id: \.self) { i in
+                            let routine = routines[i]
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(routine.name)
+                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                                    Text(routine.prompt)
+                                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { routines[i].isEnabled },
+                                    set: { newVal in
+                                        routines[i].isEnabled = newVal
+                                        RoutinesStore.routines = routines
+                                    }
+                                ))
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.blue.opacity(0.06))
+                            )
+                        }
+                    }
+                    Spacer(minLength: 40)
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { done() }
+                }
+            }
+            .onAppear { routines = RoutinesStore.routines }
+        }
+    }
+}
+
+// MARK: - Body Feeling Sheet (How do you feel? with water suggestions)
+
+struct BodyFeelingOption: Identifiable {
+    let id: String
+    let emoji: String
+    let label: String
+    let suggestion: String
+}
+
+struct BodyFeelingSheet: View {
+    var onDismiss: () -> Void
+    @State private var selectedFeeling: String? = nil
+    @State private var showSuggestion = false
+    
+    private let options: [BodyFeelingOption] = [
+        BodyFeelingOption(id: "foggy", emoji: "🌫️", label: "Foggy", suggestion: "Dehydration often causes brain fog. Try a glass of water—it can help within minutes."),
+        BodyFeelingOption(id: "headache", emoji: "🤕", label: "Headache", suggestion: "Headaches are a common sign of mild dehydration. A glass of water might help."),
+        BodyFeelingOption(id: "tired", emoji: "😴", label: "Low energy", suggestion: "Fatigue can stem from dehydration. Water helps your body function better."),
+        BodyFeelingOption(id: "fine", emoji: "😊", label: "Fine", suggestion: "Great! Keep up your hydration to stay that way."),
+        BodyFeelingOption(id: "great", emoji: "🌟", label: "Great", suggestion: "Awesome! Staying hydrated is paying off."),
+    ]
+    
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("How do you feel right now?")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                
+                VStack(spacing: 12) {
+                    ForEach(options) { opt in
+                        Button(action: {
+                            selectedFeeling = opt.id
+                            showSuggestion = true
+                        }) {
+                            HStack(spacing: 16) {
+                                Text(opt.emoji)
+                                    .font(.system(size: 28))
+                                Text(opt.label)
+                                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if selectedFeeling == opt.id {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(selectedFeeling == opt.id ? Color.blue.opacity(0.12) : Color.gray.opacity(0.08))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                
+                if showSuggestion, let opt = options.first(where: { $0.id == selectedFeeling }) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.yellow)
+                        Text(opt.suggestion)
+                            .font(.system(size: 14, weight: .regular, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.yellow.opacity(0.08))
+                    )
+                }
+                
+                Spacer()
+            }
+            .padding()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onDismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Settings View (Routines, app preferences)
+
+struct SettingsView: View {
+    var onDismiss: () -> Void
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    NavigationLink(destination: WaterMomentsView()) {
+                        Label("Water Moments", systemImage: "drop.circle")
+                    }
+                } header: {
+                    Text("Routines")
+                } footer: {
+                    Text("Contextual reminders: morning, after coffee, before bed, etc.")
+                }
+                
+                Section("About") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text("1.0")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { onDismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -719,6 +1133,9 @@ struct StatisticsView: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
+                // Gentle streaks - supportive framing
+                GentleStreakCard()
+                
                 Text("Compared to previous period")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary.opacity(0.9))
@@ -734,6 +1151,40 @@ struct StatisticsView: View {
             .padding()
             .padding(.top, 12)
         }
+    }
+}
+
+// MARK: - Gentle Streak Card (supportive framing)
+
+struct GentleStreakCard: View {
+    private var daysGoalMet: Int {
+        WaterIntakeStore.daysGoalMet(days: 7)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "star.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.yellow)
+                Text("This week")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.primary)
+            }
+            Text("You've hit your water goal \(daysGoalMet) day\(daysGoalMet == 1 ? "" : "s") in the past 7 days. Every sip counts!")
+                .font(.system(size: 14, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.yellow.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.yellow.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -855,11 +1306,16 @@ struct StatisticsPeriodCard: View {
 // MARK: - Water Drop Character View
 
 struct WaterDropCharacterView: View {
+    var currentGlasses: Int = 0
+    var goalGlasses: Int = 8
+    var onLogWater: (() -> Void)? = nil
+    
     // Body animations
     @State private var isFloating = false
     @State private var isBreathing = false
     @State private var isWobbling = false
     @State private var isTapped = false
+    @State private var isCelebrating = false
     
     // Face animations
     @State private var eyesClosed = false
@@ -869,6 +1325,7 @@ struct WaterDropCharacterView: View {
     
     // Speech bubble
     @State private var showSpeechBubble = false
+    @State private var speechBubbleText = "I want to drink water! 💧"
     @State private var isThirsty = false
     
     // Timers
@@ -877,6 +1334,13 @@ struct WaterDropCharacterView: View {
     let mouthTimer = Timer.publish(every: 4.0, on: .main, in: .common).autoconnect()
     let lookTimer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
     let thirstyTimer = Timer.publish(every: 12.0, on: .main, in: .common).autoconnect()
+    
+    private var progressRatio: Double {
+        guard goalGlasses > 0 else { return 1 }
+        return min(1, Double(currentGlasses) / Double(goalGlasses))
+    }
+    
+    private var computedThirsty: Bool { progressRatio < 0.5 }
     
     enum MouthState {
         case smile
@@ -889,7 +1353,7 @@ struct WaterDropCharacterView: View {
         ZStack {
             // Speech Bubble
             if showSpeechBubble {
-                SpeechBubbleView(text: "I want to drink water! 💧")
+                SpeechBubbleView(text: speechBubbleText)
                     .offset(x: 60, y: -120)
                     .transition(.scale.combined(with: .opacity))
                     .zIndex(1)
@@ -972,21 +1436,44 @@ struct WaterDropCharacterView: View {
                     }
                     .position(x: centerX, y: centerY)
                     
-                    // Thirsty sweat drop
+                    // Thirsty sweat drop (when behind on hydration)
                     if isThirsty {
                         SweatDropView(size: geo.size.width * 0.08)
                             .offset(x: geo.size.width * 0.32, y: -geo.size.height * 0.05)
                             .transition(.opacity.combined(with: .scale))
                     }
+                    
+                    // Goal reached sparkles
+                    if isCelebrating {
+                        ForEach(0..<8, id: \.self) { i in
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.yellow)
+                                .offset(x: CGFloat(cos(Double(i) * .pi / 4)) * 60,
+                                        y: CGFloat(sin(Double(i) * .pi / 4)) * 60)
+                        }
+                    }
                 }
             }
             .offset(y: isFloating ? -8 : 8)
             .scaleEffect(isBreathing ? 1.03 : 0.97)
+            .scaleEffect(progressRatio >= 1 ? 1.05 : 1.0)
             .rotationEffect(.degrees(isWobbling ? 2 : -2))
             .scaleEffect(isTapped ? 0.9 : 1.0)
         }
         .onTapGesture {
             triggerTap()
+        }
+        .onChange(of: currentGlasses) { _, newVal in
+            if goalGlasses > 0 && newVal >= goalGlasses && !isCelebrating {
+                triggerGoalReached()
+            }
+        }
+        .onChange(of: computedThirsty) { _, newVal in
+            isThirsty = newVal
+        }
+        .onAppear {
+            isThirsty = computedThirsty
         }
         .onAppear {
             startAnimations()
@@ -1086,24 +1573,23 @@ struct WaterDropCharacterView: View {
     }
     
     private func triggerThirsty() {
-        // 30% chance to become thirsty and show speech bubble
-        guard Int.random(in: 0...10) < 3 else { return }
+        // 30% chance to become thirsty and show speech bubble (only when actually behind)
+        guard computedThirsty, Int.random(in: 0...10) < 3 else { return }
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
             isThirsty = true
+            speechBubbleText = "I want to drink water! 💧"
             showSpeechBubble = true
             eyebrowsRaised = true
             mouthState = .open
         }
         
-        // Talking animation
         talkingAnimation()
         
-        // Hide after some time
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
             withAnimation(.easeInOut(duration: 0.3)) {
                 showSpeechBubble = false
-                isThirsty = false
+                isThirsty = computedThirsty
                 eyebrowsRaised = false
                 mouthState = .smile
             }
@@ -1126,10 +1612,17 @@ struct WaterDropCharacterView: View {
             isTapped = true
         }
         
-        // Surprised face
         withAnimation(.easeInOut(duration: 0.1)) {
             mouthState = .surprised
             eyebrowsRaised = true
+        }
+        
+        // Log water if callback provided
+        if let onLogWater = onLogWater {
+            onLogWater()
+            let goalReached = currentGlasses + 1 >= goalGlasses && goalGlasses > 0
+            speechBubbleText = goalReached ? "You did it! 🎉" : (currentGlasses + 1 < goalGlasses ? "Thanks! 💧" : "One more! 🌟")
+            showSpeechBubble = true
         }
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -1140,6 +1633,32 @@ struct WaterDropCharacterView: View {
         
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation(.easeInOut(duration: 0.2)) {
+                mouthState = .smile
+                eyebrowsRaised = false
+            }
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showSpeechBubble = false
+            }
+        }
+    }
+    
+    private func triggerGoalReached() {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+            isCelebrating = true
+            speechBubbleText = "You did it! 🎉"
+            showSpeechBubble = true
+            mouthState = .open
+            eyebrowsRaised = true
+        }
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            withAnimation(.easeOut(duration: 0.5)) {
+                isCelebrating = false
+                showSpeechBubble = false
                 mouthState = .smile
                 eyebrowsRaised = false
             }

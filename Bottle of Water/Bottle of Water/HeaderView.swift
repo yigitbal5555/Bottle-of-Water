@@ -8,6 +8,9 @@
 import SwiftUI
 
 struct HeaderView: View {
+    var onSettingsTap: (() -> Void)? = nil
+    var onNotificationsTap: (() -> Void)? = nil
+    
     var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
         switch hour {
@@ -109,15 +112,13 @@ struct HeaderView: View {
                 Spacer()
                 
                 HStack(spacing: 16) {
-                Button(action: {
-                }) {
+                Button(action: { onNotificationsTap?() }) {
                     Image(systemName: "bell")
                         .font(.system(size: 18, weight: .regular))
                         .foregroundColor(.secondary)
                 }
                 
-                Button(action: {
-                }) {
+                Button(action: { onSettingsTap?() }) {
                     Image(systemName: "gearshape")
                         .font(.system(size: 18, weight: .regular))
                         .foregroundColor(.secondary)

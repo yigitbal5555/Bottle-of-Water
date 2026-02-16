@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import UIKit
 
 // MARK: - Root
 
@@ -63,7 +64,29 @@ struct RootView: View {
 struct WaterGoalStore {
     private static let prefix = "dailyWaterGoal_"
     private static let defaultGlasses = 8
-    private static let glassVolumeML = 250
+    private static let defaultGlassVolumeML = 250
+    private static let customGlassVolumeKey = "customGlassVolumeML"
+    
+    /// Persisted glass volume in mL; nil means use default.
+    static var glassVolume: Int {
+        let v = UserDefaults.standard.object(forKey: customGlassVolumeKey) as? Int
+        return v ?? defaultGlassVolumeML
+    }
+    
+    static func setGlassVolume(_ ml: Int) {
+        let clamped = max(50, min(1000, ml))
+        UserDefaults.standard.set(clamped, forKey: customGlassVolumeKey)
+        NotificationCenter.default.post(name: .waterGoalDidChange, object: nil)
+    }
+    
+    static func resetGlassVolumeToDefault() {
+        UserDefaults.standard.removeObject(forKey: customGlassVolumeKey)
+        NotificationCenter.default.post(name: .waterGoalDidChange, object: nil)
+    }
+    
+    static var isUsingCustomGlassVolume: Bool {
+        UserDefaults.standard.object(forKey: customGlassVolumeKey) != nil
+    }
     
     static func key(for date: Date) -> String {
         let formatter = DateFormatter()
@@ -81,8 +104,6 @@ struct WaterGoalStore {
         UserDefaults.standard.set(clamped, forKey: key(for: date))
         NotificationCenter.default.post(name: .waterGoalDidChange, object: nil)
     }
-    
-    static var glassVolume: Int { glassVolumeML }
 }
 
 extension Notification.Name {
@@ -97,6 +118,7 @@ struct HomeView: View {
     @State private var todayGlasses: Int = WaterIntakeStore.glasses(for: Date())
     @State private var lastLogHaptic = Date()
     @State private var showFeelingSheet = false
+    @State private var showGlassMeasure = false
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -143,6 +165,19 @@ struct HomeView: View {
                 }
                 .padding(.top, 8)
                 
+                // Measure glass shortcut (opens camera-based volume measurement)
+                Button(action: { showGlassMeasure = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 12))
+                        Text("Measure glass volume")
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                    }
+                    .foregroundColor(.blue)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+                
                 // How do you feel? (body-based guidance)
                 Button(action: { showFeelingSheet = true }) {
                     HStack(spacing: 10) {
@@ -187,6 +222,11 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showFeelingSheet) {
             BodyFeelingSheet(onDismiss: { showFeelingSheet = false })
+        }
+        .sheet(isPresented: $showGlassMeasure) {
+            GlassMeasureView(onSaved: {
+                showGlassMeasure = false
+            })
         }
     }
     
@@ -240,7 +280,6 @@ struct CalendarView: View {
     
     private let calendar = Calendar.current
     private let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    private let glassVolumeML = 250
     
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -323,7 +362,7 @@ struct CalendarView: View {
                 WaterGoalCardView(
                     date: selectedDate,
                     goalGlasses: goalForSelectedDate,
-                    glassVolumeML: glassVolumeML,
+                    glassVolumeML: WaterGoalStore.glassVolume,
                     isEditable: true,
                     onGoalChange: { newGoal in
                         goalForSelectedDate = newGoal
@@ -1004,14 +1043,399 @@ struct BodyFeelingSheet: View {
     }
 }
 
+// MARK: - Camera Image Picker (for glass measurement)
+
+struct CameraImagePicker: UIViewControllerRepresentable {
+    var onImagePicked: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraImagePicker
+        
+        init(_ parent: CameraImagePicker) {
+            self.parent = parent
+        }
+        
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onImagePicked(image)
+            }
+            parent.dismiss()
+        }
+        
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+// MARK: - Glass measurement (camera + crop + height → volume)
+
+struct GlassMeasureView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onSaved: (() -> Void)?
+    
+    enum Step {
+        case takePhoto
+        case adjustFrame(UIImage)
+        case enterHeight(UIImage, glassRect: CGRect)
+        case result(volumeML: Int)
+    }
+    
+    @State private var step: Step = .takePhoto
+    @State private var heightCmText = ""
+    @State private var calculatedVolumeML: Int?
+    
+    // Normalized rect (0–1) for glass in image
+    @State private var normRect = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+    @State private var dragOffset: CGSize = .zero
+    @State private var pinchScale: CGFloat = 1.0
+    
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch step {
+                case .takePhoto:
+                    takePhotoView
+                case .adjustFrame(let image):
+                    adjustFrameView(image: image)
+                case .enterHeight(let image, let rect):
+                    enterHeightView(image: image, glassRect: rect)
+                case .result(let volumeML):
+                    resultView(volumeML: volumeML)
+                }
+            }
+            .navigationTitle("Measure your glass")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    private var takePhotoView: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 60))
+                .foregroundColor(.blue.opacity(0.7))
+            Text("Place your empty glass on a flat surface and take a photo. We'll use the image to estimate its volume.")
+                .font(.system(size: 16, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button(action: { showCameraPicker() }) {
+                Text("Open camera")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                showCameraPicker()
+            }
+        }
+    }
+    
+    private func showCameraPicker() {
+        // We need to present camera from a UIViewController. Use a wrapper that presents on appear.
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = windowScene.windows.first?.rootViewController else { return }
+        var top = root
+        while let presented = top.presentedViewController { top = presented }
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = CameraDelegate.shared
+        CameraDelegate.shared.onImage = { img in
+            top.dismiss(animated: true)
+            step = .adjustFrame(img)
+        }
+        CameraDelegate.shared.onCancel = {
+            top.dismiss(animated: true)
+            dismiss()
+        }
+        top.present(picker, animated: true)
+    }
+    
+    private func adjustFrameView(image: UIImage) -> some View {
+        let displayImage = Image(uiImage: image)
+        return VStack(spacing: 16) {
+            Text("Drag and pinch to fit the rectangle around your glass.")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+            GeometryReader { geo in
+                let fitScale = min(geo.size.width / image.size.width, geo.size.height / image.size.height)
+                let imageDisplayW = image.size.width * fitScale
+                let imageDisplayH = image.size.height * fitScale
+                let imageDisplayX = (geo.size.width - imageDisplayW) / 2
+                let imageDisplayY = (geo.size.height - imageDisplayH) / 2
+                let imageDisplayFrame = CGRect(x: imageDisplayX, y: imageDisplayY, width: imageDisplayW, height: imageDisplayH)
+                ZStack(alignment: .topLeading) {
+                    displayImage
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    GlassCropOverlay(
+                        imageDisplayFrame: imageDisplayFrame,
+                        normRect: $normRect
+                    )
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+            .aspectRatio(image.size.width / image.size.height, contentMode: .fit)
+            .padding(.horizontal)
+            Button(action: {
+                let rect = normRect
+                step = .enterHeight(image, glassRect: rect)
+            }) {
+                Text("Next")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .onAppear {
+            normRect = CGRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6)
+        }
+    }
+    
+    private func enterHeightView(image: UIImage, glassRect: CGRect) -> some View {
+        VStack(spacing: 24) {
+            Text("Enter the height of your glass in cm (e.g. 12). We'll use the shape from the photo to estimate volume.")
+                .font(.system(size: 15, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            TextField("Height (cm)", text: $heightCmText)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 18, weight: .medium, design: .rounded))
+                .frame(maxWidth: 280)
+                .padding()
+            Button(action: calculateVolume) {
+                Text("Calculate volume")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 40)
+            .disabled(heightCmText.isEmpty)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+    
+    private func calculateVolume() {
+        guard let heightCm = Double(heightCmText.replacingOccurrences(of: ",", with: ".")),
+              heightCm > 0.5, heightCm < 50,
+              case .enterHeight(let image, let glassRect) = step else { return }
+        
+        let w = glassRect.width * Double(image.size.width)
+        let h = glassRect.height * Double(image.size.height)
+        guard h > 0 else { return }
+        let aspectRatio = w / h
+        let realHeightCm = heightCm
+        let realDiameterCm = aspectRatio * realHeightCm
+        let radiusCm = realDiameterCm / 2
+        let volumeCm3 = Double.pi * radiusCm * radiusCm * realHeightCm
+        let volumeML = Int(round(volumeCm3))
+        let rounded = max(50, min(1000, (volumeML / 25) * 25))
+        step = .result(volumeML: rounded)
+    }
+    
+    private func resultView(volumeML: Int) -> some View {
+        VStack(spacing: 24) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56))
+                .foregroundColor(.green)
+            Text("Estimated volume")
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundColor(.secondary)
+            Text("\(volumeML) mL")
+                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .foregroundColor(.blue)
+            Text("We'll use this as one \"glass\" in your daily goal.")
+                .font(.system(size: 14, weight: .regular, design: .rounded))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button(action: {
+                WaterGoalStore.setGlassVolume(volumeML)
+                onSaved?()
+                dismiss()
+            }) {
+                Text("Use this as my glass size")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+}
+
+// MARK: - Camera delegate singleton (to receive image from UIKit picker)
+
+private class CameraDelegate: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    static let shared = CameraDelegate()
+    var onImage: ((UIImage) -> Void)?
+    var onCancel: (() -> Void)?
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+        if let image = info[.originalImage] as? UIImage {
+            onImage?(image)
+        }
+        picker.dismiss(animated: true)
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        onCancel?()
+        picker.dismiss(animated: true)
+    }
+}
+
+// MARK: - Glass crop overlay (draggable + pinchable rect)
+
+struct GlassCropOverlay: View {
+    let imageDisplayFrame: CGRect
+    @Binding var normRect: CGRect
+    
+    @State private var lastNormOrigin: CGPoint = .zero
+    @State private var lastNormSize: CGSize = .zero
+    @State private var isDragging = false
+    @State private var isPinching = false
+    
+    private var displayRect: CGRect {
+        let w = normRect.width * imageDisplayFrame.width
+        let h = normRect.height * imageDisplayFrame.height
+        let x = imageDisplayFrame.origin.x + normRect.origin.x * imageDisplayFrame.width
+        let y = imageDisplayFrame.origin.y + normRect.origin.y * imageDisplayFrame.height
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+    
+    var body: some View {
+        Rectangle()
+            .stroke(Color.blue, lineWidth: 3)
+            .background(Color.blue.opacity(0.2))
+            .frame(width: displayRect.width, height: displayRect.height)
+            .position(x: displayRect.midX, y: displayRect.midY)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        let dx = value.translation.width / imageDisplayFrame.width
+                        let dy = value.translation.height / imageDisplayFrame.height
+                        if !isDragging {
+                            lastNormOrigin = normRect.origin
+                            isDragging = true
+                        }
+                        var newX = lastNormOrigin.x + dx
+                        var newY = lastNormOrigin.y + dy
+                        newX = max(0, min(1 - normRect.width, newX))
+                        newY = max(0, min(1 - normRect.height, newY))
+                        normRect.origin = CGPoint(x: newX, y: newY)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .onChanged { value in
+                        if !isPinching {
+                            lastNormSize = normRect.size
+                            lastNormOrigin = normRect.origin
+                            isPinching = true
+                        }
+                        let newW = max(0.1, min(1, lastNormSize.width * value))
+                        let newH = max(0.1, min(1, lastNormSize.height * value))
+                        var newX = lastNormOrigin.x + (lastNormSize.width - newW) / 2
+                        var newY = lastNormOrigin.y + (lastNormSize.height - newH) / 2
+                        newX = max(0, min(1 - newW, newX))
+                        newY = max(0, min(1 - newH, newY))
+                        normRect = CGRect(x: newX, y: newY, width: newW, height: newH)
+                    }
+                    .onEnded { _ in
+                        isPinching = false
+                    }
+            )
+    }
+}
+
 // MARK: - Settings View (Routines, app preferences)
 
 struct SettingsView: View {
     var onDismiss: () -> Void
+    @State private var currentGlassVolume: Int = WaterGoalStore.glassVolume
     
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    HStack {
+                        Label("Glass size", systemImage: "cup.and.saucer")
+                        Spacer()
+                        Text("\(currentGlassVolume) mL")
+                            .foregroundColor(.secondary)
+                    }
+                    NavigationLink(destination: GlassMeasureView(onSaved: {
+                        currentGlassVolume = WaterGoalStore.glassVolume
+                    })) {
+                        Label("Measure my glass with camera", systemImage: "camera.fill")
+                    }
+                    if WaterGoalStore.isUsingCustomGlassVolume {
+                        Button(role: .destructive, action: {
+                            WaterGoalStore.resetGlassVolumeToDefault()
+                            currentGlassVolume = WaterGoalStore.glassVolume
+                        }) {
+                            Label("Reset to default (250 mL)", systemImage: "arrow.uturn.backward")
+                        }
+                    }
+                } header: {
+                    Text("Glass volume")
+                } footer: {
+                    Text("One \"glass\" in your daily goal uses this volume. Measure your real glass with the camera for accurate tracking.")
+                }
+                
                 Section {
                     NavigationLink(destination: WaterMomentsView()) {
                         Label("Water Moments", systemImage: "drop.circle")
@@ -1037,6 +1461,9 @@ struct SettingsView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { onDismiss() }
                 }
+            }
+            .onAppear {
+                currentGlassVolume = WaterGoalStore.glassVolume
             }
         }
     }

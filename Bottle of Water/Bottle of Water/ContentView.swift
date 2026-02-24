@@ -1082,7 +1082,26 @@ struct CameraImagePicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Glass measurement (camera + crop + height → volume)
+// MARK: - AR volume measurement (SwiftUI wrapper)
+
+struct ARMeasureView: UIViewControllerRepresentable {
+    var onVolumeMeasured: (Int) -> Void
+    var onDismiss: () -> Void
+
+    func makeUIViewController(context: Context) -> ARMeasureViewController {
+        let vc = ARMeasureViewController()
+        vc.onVolumeMeasured = { ml in
+            onVolumeMeasured(ml)
+        }
+        vc.onDismiss = onDismiss
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: ARMeasureViewController, context: Context) {}
+}
+
+// MARK: - Glass measurement (camera + crop → volume, no user input)
+// Volume = width × height × length from camera crop; scale from image size.
 
 struct GlassMeasureView: View {
     @Environment(\.dismiss) private var dismiss
@@ -1091,18 +1110,14 @@ struct GlassMeasureView: View {
     enum Step {
         case takePhoto
         case adjustFrame(UIImage)
-        case enterHeight(UIImage, glassRect: CGRect)
         case result(volumeML: Int)
     }
     
     @State private var step: Step = .takePhoto
-    @State private var heightCmText = ""
-    @State private var calculatedVolumeML: Int?
+    @State private var showARMeasure = false
     
     // Normalized rect (0–1) for glass in image
     @State private var normRect = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
-    @State private var dragOffset: CGSize = .zero
-    @State private var pinchScale: CGFloat = 1.0
     
     var body: some View {
         NavigationStack {
@@ -1112,8 +1127,6 @@ struct GlassMeasureView: View {
                     takePhotoView
                 case .adjustFrame(let image):
                     adjustFrameView(image: image)
-                case .enterHeight(let image, let rect):
-                    enterHeightView(image: image, glassRect: rect)
                 case .result(let volumeML):
                     resultView(volumeML: volumeML)
                 }
@@ -1126,6 +1139,16 @@ struct GlassMeasureView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: $showARMeasure) {
+            ARMeasureView(
+                onVolumeMeasured: { ml in
+                    WaterGoalStore.setGlassVolume(ml)
+                    onSaved?()
+                    dismiss()
+                },
+                onDismiss: { showARMeasure = false }
+            )
+        }
     }
     
     private var takePhotoView: some View {
@@ -1133,13 +1156,13 @@ struct GlassMeasureView: View {
             Image(systemName: "camera.fill")
                 .font(.system(size: 60))
                 .foregroundColor(.blue.opacity(0.7))
-            Text("Place your empty glass on a flat surface and take a photo. We'll use the image to estimate its volume.")
+            Text("Place your empty glass on a flat surface. Use photo or AR to measure volume.")
                 .font(.system(size: 16, weight: .regular, design: .rounded))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             Button(action: { showCameraPicker() }) {
-                Text("Open camera")
+                Text("Open camera (photo)")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -1149,18 +1172,27 @@ struct GlassMeasureView: View {
             }
             .padding(.horizontal, 40)
             .padding(.top, 8)
+            Button(action: { showARMeasure = true }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arkit")
+                        .font(.system(size: 18))
+                    Text("Measure with AR (any object)")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.orange)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGroupedBackground))
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                showCameraPicker()
-            }
-        }
     }
     
     private func showCameraPicker() {
-        // We need to present camera from a UIViewController. Use a wrapper that presents on appear.
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let root = windowScene.windows.first?.rootViewController else { return }
         var top = root
@@ -1208,10 +1240,10 @@ struct GlassMeasureView: View {
             .aspectRatio(image.size.width / image.size.height, contentMode: .fit)
             .padding(.horizontal)
             Button(action: {
-                let rect = normRect
-                step = .enterHeight(image, glassRect: rect)
+                let volumeML = calculateVolumeFromCamera(image: image, glassRect: normRect)
+                step = .result(volumeML: volumeML)
             }) {
-                Text("Next")
+                Text("Calculate volume")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -1229,51 +1261,18 @@ struct GlassMeasureView: View {
         }
     }
     
-    private func enterHeightView(image: UIImage, glassRect: CGRect) -> some View {
-        VStack(spacing: 24) {
-            Text("Enter the height of your glass in cm (e.g. 12). We'll use the shape from the photo to estimate volume.")
-                .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            TextField("Height (cm)", text: $heightCmText)
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 18, weight: .medium, design: .rounded))
-                .frame(maxWidth: 280)
-                .padding()
-            Button(action: calculateVolume) {
-                Text("Calculate volume")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-            }
-            .padding(.horizontal, 40)
-            .disabled(heightCmText.isEmpty)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
-    }
-    
-    private func calculateVolume() {
-        guard let heightCm = Double(heightCmText.replacingOccurrences(of: ",", with: ".")),
-              heightCm > 0.5, heightCm < 50,
-              case .enterHeight(let image, let glassRect) = step else { return }
-        
-        let w = glassRect.width * Double(image.size.width)
-        let h = glassRect.height * Double(image.size.height)
-        guard h > 0 else { return }
-        let aspectRatio = w / h
-        let realHeightCm = heightCm
-        let realDiameterCm = aspectRatio * realHeightCm
-        let radiusCm = realDiameterCm / 2
-        let volumeCm3 = Double.pi * radiusCm * radiusCm * realHeightCm
+    private func calculateVolumeFromCamera(image: UIImage, glassRect: CGRect) -> Int {
+        let widthPx = glassRect.width * Double(image.size.width)
+        let heightPx = glassRect.height * Double(image.size.height)
+        guard heightPx > 0, image.size.height > 0 else { return 250 }
+        let lengthPx = widthPx
+        let scaleCmPerPx = 35.0 / Double(image.size.height)
+        let widthCm = widthPx * scaleCmPerPx
+        let heightCm = heightPx * scaleCmPerPx
+        let lengthCm = lengthPx * scaleCmPerPx
+        let volumeCm3 = widthCm * heightCm * lengthCm
         let volumeML = Int(round(volumeCm3))
-        let rounded = max(50, min(1000, (volumeML / 25) * 25))
-        step = .result(volumeML: rounded)
+        return max(50, min(1000, (volumeML / 25) * 25))
     }
     
     private func resultView(volumeML: Int) -> some View {

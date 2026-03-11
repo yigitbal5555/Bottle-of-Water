@@ -137,31 +137,43 @@ struct HomeView: View {
                 .frame(width: 220, height: 320)
                 .frame(maxWidth: .infinity)
                 
-                // Progress counter + One-tap add button
-                HStack(spacing: 16) {
+                // Progress counter + One-tap add button + Undo
+                VStack(spacing: 10) {
                     ProgressCounterBadge(current: todayGlasses, goal: todayGoal)
-                    Button(action: logWater) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 24))
-                            Text("Add glass")
-                                .font(.system(size: 16, weight: .semibold, design: .rounded))
+
+                    HStack(spacing: 12) {
+                        // Undo (remove glass) button
+                        Button(action: removeWater) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(todayGlasses > 0 ? .blue.opacity(0.7) : .gray.opacity(0.3))
                         }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.cyan, Color.blue],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
+                        .buttonStyle(.plain)
+                        .disabled(todayGlasses <= 0)
+
+                        Button(action: logWater) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 24))
+                                Text("Add glass")
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.cyan, Color.blue],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
                                     )
-                                )
-                        )
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.top, 8)
                 
@@ -233,6 +245,12 @@ struct HomeView: View {
     private func logWater() {
         WaterIntakeStore.addGlass(for: Date())
         let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+    }
+
+    private func removeWater() {
+        WaterIntakeStore.removeGlass(for: Date())
+        let generator = UIImpactFeedbackGenerator(style: .rigid)
         generator.impactOccurred()
     }
 }
@@ -794,6 +812,13 @@ struct WaterIntakeStore {
         let current = glasses(for: date)
         setGlasses(current + 1, for: date)
     }
+
+    /// Remove one glass for the given date (undo last log).
+    static func removeGlass(for date: Date) {
+        let current = glasses(for: date)
+        guard current > 0 else { return }
+        setGlasses(current - 1, for: date)
+    }
     
     private static func keyString(_ date: Date) -> String {
         let formatter = DateFormatter()
@@ -841,11 +866,45 @@ struct WaterIntakeStore {
 
 // MARK: - Routines Store (Water moments: Morning, Post-workout, Before bed, etc.)
 
-struct RoutineItem: Identifiable {
+struct RoutineItem: Identifiable, Codable {
     let id: String
     var name: String
     var prompt: String
     var isEnabled: Bool
+    var notificationHour: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, prompt, isEnabled, notificationHour
+    }
+
+    init(id: String, name: String, prompt: String, isEnabled: Bool, notificationHour: Int) {
+        self.id = id
+        self.name = name
+        self.prompt = prompt
+        self.isEnabled = isEnabled
+        self.notificationHour = notificationHour
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        prompt = try container.decode(String.self, forKey: .prompt)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        // Backward compatible: old data may not have notificationHour
+        if let hour = try? container.decode(Int.self, forKey: .notificationHour) {
+            notificationHour = hour
+        } else {
+            switch id {
+            case "morning":      notificationHour = 8
+            case "after_coffee": notificationHour = 10
+            case "afternoon":    notificationHour = 15
+            case "post_workout": notificationHour = 18
+            case "before_bed":   notificationHour = 21
+            default:             notificationHour = 9
+            }
+        }
+    }
 }
 
 struct RoutinesStore {
@@ -868,11 +927,11 @@ struct RoutinesStore {
     
     private static var defaultRoutines: [RoutineItem] {
         [
-            RoutineItem(id: "morning", name: "Morning", prompt: "Start your day with a glass of water", isEnabled: true),
-            RoutineItem(id: "after_coffee", name: "After coffee", prompt: "Balance coffee with a glass of water", isEnabled: true),
-            RoutineItem(id: "before_bed", name: "Before bed", prompt: "A small sip before sleep supports rest", isEnabled: true),
-            RoutineItem(id: "post_workout", name: "Post-workout", prompt: "Replenish after exercise", isEnabled: true),
-            RoutineItem(id: "afternoon", name: "Afternoon slump", prompt: "Water can help when you feel foggy", isEnabled: true),
+            RoutineItem(id: "morning",      name: "Morning",         prompt: "Start your day with a glass of water",   isEnabled: true, notificationHour: 8),
+            RoutineItem(id: "after_coffee", name: "After coffee",    prompt: "Balance coffee with a glass of water",   isEnabled: true, notificationHour: 10),
+            RoutineItem(id: "afternoon",    name: "Afternoon slump", prompt: "Water can help when you feel foggy",     isEnabled: true, notificationHour: 15),
+            RoutineItem(id: "post_workout", name: "Post-workout",    prompt: "Replenish after exercise",               isEnabled: true, notificationHour: 18),
+            RoutineItem(id: "before_bed",   name: "Before bed",      prompt: "A small sip before sleep supports rest", isEnabled: true, notificationHour: 21),
         ]
     }
     
@@ -885,24 +944,29 @@ struct RoutinesStore {
     }
 }
 
-extension RoutineItem: Codable {}
-
-// MARK: - Water Moments View (contextual prompts - bell opens this)
+// MARK: - Water Moments View (contextual prompts with real notification scheduling)
 
 struct WaterMomentsView: View {
     var onDismiss: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var routines: [RoutineItem] = RoutinesStore.routines
-    
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var expandedRoutineId: String? = nil
+
     private func done() {
+        save()
+        if let onDismiss = onDismiss { onDismiss() } else { dismiss() }
+    }
+
+    private func save() {
         RoutinesStore.routines = routines
-        if let onDismiss = onDismiss {
-            onDismiss()
-        } else {
-            dismiss()
+        NotificationManager.checkPermissionStatus { status in
+            if status == .authorized {
+                NotificationManager.scheduleRoutineNotifications(routines: routines)
+            }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -910,38 +974,74 @@ struct WaterMomentsView: View {
                     Text("Water Moments")
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .foregroundColor(.secondary)
-                    
-                    Text("Contextual reminders instead of generic \"drink water\" nudges.")
+
+                    Text("Contextual reminders at the right moments—no generic nudges.")
                         .font(.system(size: 14, weight: .regular, design: .rounded))
                         .foregroundColor(.secondary)
-                    
-                    VStack(spacing: 12) {
-                        ForEach(routines.indices, id: \.self) { i in
-                            let routine = routines[i]
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(routine.name)
-                                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                                    Text(routine.prompt)
-                                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Toggle("", isOn: Binding(
-                                    get: { routines[i].isEnabled },
-                                    set: { newVal in
-                                        routines[i].isEnabled = newVal
-                                        RoutinesStore.routines = routines
-                                    }
-                                ))
+
+                    // Notification permission banner
+                    if notificationStatus == .denied {
+                        HStack(spacing: 10) {
+                            Image(systemName: "bell.slash.fill")
+                                .foregroundColor(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Notifications are off")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                Text("Enable in Settings > Notifications")
+                                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                                    .foregroundColor(.secondary)
                             }
-                            .padding(16)
+                            Spacer()
+                            Button("Open Settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.blue)
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.orange.opacity(0.08))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.2), lineWidth: 1))
+                        )
+                    } else if notificationStatus == .notDetermined {
+                        Button(action: {
+                            NotificationManager.requestPermission { granted in
+                                notificationStatus = granted ? .authorized : .denied
+                                if granted {
+                                    NotificationManager.scheduleRoutineNotifications(routines: routines)
+                                }
+                            }
+                        }) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "bell.badge.fill")
+                                    .foregroundColor(.blue)
+                                Text("Enable notifications for reminders")
+                                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(14)
                             .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(Color.blue.opacity(0.06))
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.blue.opacity(0.07))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.blue.opacity(0.15), lineWidth: 1))
                             )
                         }
+                        .buttonStyle(.plain)
                     }
+
+                    VStack(spacing: 12) {
+                        ForEach(routines.indices, id: \.self) { i in
+                            routineCard(index: i)
+                        }
+                    }
+
                     Spacer(minLength: 40)
                 }
                 .padding()
@@ -952,8 +1052,85 @@ struct WaterMomentsView: View {
                     Button("Done") { done() }
                 }
             }
-            .onAppear { routines = RoutinesStore.routines }
+            .onAppear {
+                routines = RoutinesStore.routines
+                NotificationManager.checkPermissionStatus { status in
+                    notificationStatus = status
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private func routineCard(index i: Int) -> some View {
+        let routine = routines[i]
+        let isExpanded = expandedRoutineId == routine.id
+
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(routine.name)
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Text(routine.prompt)
+                        .font(.system(size: 13, weight: .regular, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { routines[i].isEnabled },
+                    set: { newVal in
+                        routines[i].isEnabled = newVal
+                        save()
+                    }
+                ))
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    expandedRoutineId = isExpanded ? nil : routine.id
+                }
+            }
+
+            if isExpanded {
+                Divider().padding(.horizontal, 16)
+
+                HStack {
+                    Image(systemName: "clock")
+                        .font(.system(size: 14))
+                        .foregroundColor(.blue)
+                    Text("Notify at:")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Picker("Hour", selection: Binding(
+                        get: { routines[i].notificationHour },
+                        set: { newHour in
+                            routines[i].notificationHour = newHour
+                            save()
+                        }
+                    )) {
+                        ForEach(0..<24, id: \.self) { hour in
+                            Text(NotificationManager.hourLabel(hour))
+                                .tag(hour)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.blue)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(routine.isEnabled ? Color.blue.opacity(0.06) : Color.gray.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(routine.isEnabled ? Color.blue.opacity(0.15) : Color.clear, lineWidth: 1)
+        )
     }
 }
 
@@ -1405,10 +1582,13 @@ struct GlassCropOverlay: View {
 struct SettingsView: View {
     var onDismiss: () -> Void
     @State private var currentGlassVolume: Int = WaterGoalStore.glassVolume
-    
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var showResetConfirmation = false
+
     var body: some View {
         NavigationStack {
             List {
+                // MARK: Glass Volume
                 Section {
                     HStack {
                         Label("Glass size", systemImage: "cup.and.saucer")
@@ -1434,22 +1614,74 @@ struct SettingsView: View {
                 } footer: {
                     Text("One \"glass\" in your daily goal uses this volume. Measure your real glass with the camera for accurate tracking.")
                 }
-                
+
+                // MARK: Routines & Notifications
                 Section {
                     NavigationLink(destination: WaterMomentsView()) {
                         Label("Water Moments", systemImage: "drop.circle")
                     }
+
+                    switch notificationStatus {
+                    case .notDetermined:
+                        Button(action: {
+                            NotificationManager.requestPermission { granted in
+                                notificationStatus = granted ? .authorized : .denied
+                                if granted {
+                                    NotificationManager.scheduleRoutineNotifications(routines: RoutinesStore.routines)
+                                }
+                            }
+                        }) {
+                            Label("Enable reminder notifications", systemImage: "bell.badge")
+                        }
+                    case .authorized, .provisional, .ephemeral:
+                        HStack {
+                            Label("Notifications", systemImage: "bell.fill")
+                            Spacer()
+                            Text("Enabled")
+                                .foregroundColor(.green)
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                    case .denied:
+                        Button(action: {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }) {
+                            Label("Notifications off – open Settings", systemImage: "bell.slash")
+                                .foregroundColor(.orange)
+                        }
+                    @unknown default:
+                        EmptyView()
+                    }
                 } header: {
                     Text("Routines")
                 } footer: {
-                    Text("Contextual reminders: morning, after coffee, before bed, etc.")
+                    Text("Contextual reminders: morning, after coffee, before bed, and more. Tap Water Moments to configure times.")
                 }
-                
+
+                // MARK: Data
+                Section {
+                    Button(role: .destructive, action: { showResetConfirmation = true }) {
+                        Label("Reset all data", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Clears all water intake logs, daily goals, and coffee records. This cannot be undone.")
+                }
+
+                // MARK: About
                 Section("About") {
                     HStack {
                         Text("Version")
                         Spacer()
                         Text("1.0")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("Made by")
+                        Spacer()
+                        Text("Yiğit Bal")
                             .foregroundColor(.secondary)
                     }
                 }
@@ -1463,8 +1695,41 @@ struct SettingsView: View {
             }
             .onAppear {
                 currentGlassVolume = WaterGoalStore.glassVolume
+                NotificationManager.checkPermissionStatus { status in
+                    notificationStatus = status
+                }
+            }
+            .confirmationDialog(
+                "Reset all data?",
+                isPresented: $showResetConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Reset Everything", role: .destructive) {
+                    resetAllData()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will permanently delete all water intake logs, goals, and coffee records.")
             }
         }
+    }
+
+    private func resetAllData() {
+        // Clear all UserDefaults keys for this app's data
+        let defaults = UserDefaults.standard
+        let dict = defaults.dictionaryRepresentation()
+        for key in dict.keys {
+            if key.hasPrefix("waterIntakeGlasses")
+                || key.hasPrefix("dailyWaterGoal_")
+                || key.hasPrefix("coffeeLimit_")
+                || key == "waterRoutines"
+                || key == "customGlassVolumeML" {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        NotificationCenter.default.post(name: .waterGoalDidChange, object: nil)
+        NotificationCenter.default.post(name: .waterIntakeDidChange, object: nil)
+        currentGlassVolume = WaterGoalStore.glassVolume
     }
 }
 
@@ -1558,25 +1823,151 @@ struct StatisticsView: View {
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
+
+                // Weekly bar chart
+                WeeklyBarChartCard()
+
                 // Gentle streaks - supportive framing
                 GentleStreakCard()
-                
+
                 Text("Compared to previous period")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary.opacity(0.9))
-                
+
                 VStack(spacing: 12) {
                     ForEach(StatisticsPeriod.allCases) { period in
                         StatisticsPeriodCard(period: period)
                     }
                 }
-                
+
                 Spacer(minLength: 24)
             }
             .padding()
             .padding(.top, 12)
         }
+    }
+}
+
+// MARK: - Weekly Bar Chart Card
+
+struct WeeklyBarChartCard: View {
+    private struct DayBar: Identifiable {
+        let id = UUID()
+        let label: String
+        let glasses: Int
+        let goal: Int
+        let isToday: Bool
+    }
+
+    private var bars: [DayBar] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return (0..<7).reversed().map { offset in
+            let date = cal.date(byAdding: .day, value: -offset, to: today) ?? today
+            let g = WaterIntakeStore.glasses(for: date)
+            let goal = WaterGoalStore.goal(for: date)
+            let fmt = DateFormatter()
+            fmt.dateFormat = "EEE"
+            return DayBar(label: fmt.string(from: date), glasses: g, goal: goal, isToday: offset == 0)
+        }
+    }
+
+    private var maxVal: Int {
+        max(bars.map { $0.goal }.max() ?? 8, bars.map { $0.glasses }.max() ?? 0)
+    }
+
+    private var avgGlasses: Double {
+        let total = bars.map { $0.glasses }.reduce(0, +)
+        return Double(total) / Double(bars.count)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.blue)
+                    Text("Last 7 days")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                }
+                Spacer()
+                Text(String(format: "avg %.1f glasses/day", avgGlasses))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+
+            GeometryReader { geo in
+                let barWidth = (geo.size.width - CGFloat(bars.count - 1) * 8) / CGFloat(bars.count)
+                HStack(alignment: .bottom, spacing: 8) {
+                    ForEach(bars) { bar in
+                        let heightRatio = maxVal > 0 ? CGFloat(bar.glasses) / CGFloat(maxVal) : 0
+                        let goalRatio = maxVal > 0 ? CGFloat(bar.goal) / CGFloat(maxVal) : 0
+                        let chartHeight: CGFloat = 100
+                        let metGoal = bar.glasses >= bar.goal
+
+                        VStack(spacing: 4) {
+                            Text("\(bar.glasses)")
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(bar.isToday ? .blue : .secondary)
+
+                            ZStack(alignment: .bottom) {
+                                // Goal line indicator
+                                Rectangle()
+                                    .fill(Color.blue.opacity(0.12))
+                                    .frame(width: barWidth, height: chartHeight * goalRatio)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                                // Actual intake bar
+                                Rectangle()
+                                    .fill(
+                                        metGoal
+                                            ? LinearGradient(colors: [.cyan, .blue], startPoint: .bottom, endPoint: .top)
+                                            : LinearGradient(colors: [.blue.opacity(0.5), .cyan.opacity(0.4)], startPoint: .bottom, endPoint: .top)
+                                    )
+                                    .frame(width: barWidth, height: max(4, chartHeight * heightRatio))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            .frame(height: chartHeight)
+
+                            Text(bar.label)
+                                .font(.system(size: 10, weight: bar.isToday ? .bold : .regular, design: .rounded))
+                                .foregroundColor(bar.isToday ? .blue : .secondary)
+                        }
+                    }
+                }
+            }
+            .frame(height: 140)
+
+            HStack(spacing: 16) {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: 20, height: 10)
+                    Text("Actual")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.blue.opacity(0.12))
+                        .frame(width: 20, height: 10)
+                    Text("Goal")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.blue.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+        )
     }
 }
 

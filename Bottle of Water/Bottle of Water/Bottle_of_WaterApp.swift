@@ -6,27 +6,32 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 @main
 struct Bottle_of_WaterApp: App {
+    @State private var hasCompletedOnboarding: Bool =
+        UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            if hasCompletedOnboarding {
+                RootView()
+                    .onAppear {
+                        // Re-schedule notifications in case they were cleared
+                        NotificationManager.checkPermissionStatus { status in
+                            if status == .authorized {
+                                NotificationManager.scheduleRoutineNotifications(
+                                    routines: RoutinesStore.routines
+                                )
+                            }
+                        }
+                    }
+            } else {
+                OnboardingView {
+                    hasCompletedOnboarding = true
+                }
+            }
         }
-    }
-}
-
-struct MainView: View {
-    var body: some View {
-        VStack {
-            Image("bottle")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 150, height: 150)
-                .foregroundStyle(.tint)
-            
-            Text("Bottle of Water")
-        }
-        .padding()
     }
 }

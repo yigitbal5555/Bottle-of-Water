@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Bottle of Water – Simulation</title>
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "Segoe UI", sans-serif; }
+
+    /* ── Phone shell ── */
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e8f4f8;
+      min-height: 100vh;
+    }
+    .phone {
+      width: 390px;
+      height: 844px;
+      border-radius: 44px;
+      border: 10px solid #1a1a2e;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(160deg, rgba(59,130,246,0.09) 0%, rgba(6,182,212,0.04) 100%);
+      box-shadow: 0 40px 80px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.2);
+    }
+    /* dynamic island */
+    .dynamic-island {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 34px;
+      background: #1a1a2e;
+      border-radius: 20px;
+      z-index: 999;
+    }
+
+    /* ── Screen ── */
+    .screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+    /* ── Views ── */
+    .view { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .view.active { display: flex; }
+
+    /* ── Scrollable content ── */
+    .scroll-content { flex: 1; overflow-y: auto; padding: 16px 20px 8px; -webkit-overflow-scrolling: touch; }
+    .scroll-content::-webkit-scrollbar { width: 4px; }
+    .scroll-content::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.3); border-radius: 2px; }
+
+    /* ── Header ── */
+    .header {
+      padding: 52px 20px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .header-row { display: flex; justify-content: space-between; align-items: center; }
+    .greeting { font-size: 13px; font-weight: 500; color: #6b7280; display: flex; align-items: center; gap: 5px; }
+    .header-btns { display: flex; gap: 16px; }
+    .header-btn { background: none; border: none; cursor: pointer; color: #6b7280; font-size: 18px; padding: 4px; }
+    .header-btn:hover { color: #3b82f6; }
+    .advice { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+
+    /* ── Tab bar ── */
+    .tab-bar {
+      margin: 0 10px 6px;
+      height: 70px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 0.5px solid rgba(255,255,255,0.8);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 -1px 0 rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 0;
+      flex-shrink: 0;
+    }
+    .tab-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 4px;
+      cursor: pointer;
+      border-radius: 12px;
+      transition: background 0.2s;
+      border: none;
+      background: none;
+    }
+    .tab-item.active { background: rgba(59,130,246,0.13); }
+    .tab-item .tab-icon { font-size: 22px; }
+    .tab-item .tab-label { font-size: 10px; font-weight: 500; color: #9ca3af; }
+    .tab-item.active .tab-label { color: #3b82f6; font-weight: 600; }
+    .tab-item.active .tab-icon { filter: none; }
+
+    /* ── Section title ── */
+    .section-title { font-size: 24px; font-weight: 700; color: #6b7280; margin-bottom: 16px; }
+
+    /* ── Card ── */
+    .card {
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      border: 1px solid rgba(59,130,246,0.12);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* ── HOME VIEW ── */
+    /* Water mascot */
+    .mascot-wrap { display: flex; justify-content: center; margin-bottom: 8px; }
+    .mascot {
+      width: 180px;
+      height: 260px;
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+    }
+    .water-body {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 190px;
+      background: linear-gradient(180deg, #67e8f9 0%, #3b82f6 100%);
+      border-radius: 60% 60% 40% 40% / 40% 40% 60% 60%;
+      transition: height 0.5s ease;
+      overflow: hidden;
+    }
+    .wave {
+      position: absolute;
+      top: 0;
+      left: -50%;
+      width: 200%;
+      height: 24px;
+      background: rgba(255,255,255,0.35);
+      border-radius: 50%;
+      animation: wave 2.5s linear infinite;
+    }
+    .wave2 { animation-delay: -1.2s; opacity: 0.5; }
+    @keyframes wave { 0% { transform: translateX(-25%); } 100% { transform: translateX(25%); } }
+    .mascot-face {
+      position: absolute;
+      top: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60px;
+      text-align: center;
+      font-size: 28px;
+    }
+    .mascot-tap-hint {
+      position: absolute;
+      bottom: -24px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+    }
+    .mascot-bounce { animation: bounce 0.35s cubic-bezier(.36,.07,.19,.97) both; }
+    @keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 25%{transform:translateX(-50%) translateY(-12px)} 75%{transform:translateX(-50%) translateY(4px)} }
+
+    /* Progress badge */
+    .progress-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(59,130,246,0.07);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-radius: 14px;
+      padding: 10px 16px;
+      margin-bottom: 12px;
+      justify-content: center;
+    }
+    .progress-badge .drop { font-size: 18px; }
+    .progress-count { font-size: 18px; font-weight: 700; color: #3b82f6; }
+    .progress-glasses { font-size: 14px; font-weight: 500; color: #6b7280; }
+    .progress-ml { font-size: 12px; color: #9ca3af; }
+
+    /* Action row */
+    .action-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .btn-minus {
+      background: none; border: none; font-size: 28px; cursor: pointer;
+      color: #3b82f6; padding: 4px; flex-shrink: 0;
+    }
+    .btn-minus:disabled { color: #d1d5db; }
+    .btn-add {
+      flex: 1;
+      background: linear-gradient(90deg, #06b6d4, #3b82f6);
+      border: none;
+      border-radius: 14px;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.15s;
+    }
+    .btn-add:active { opacity: 0.85; }
+
+    /* Feeling card */
+    .feeling-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+      background: rgba(236,72,153,0.05);
+      border: 1px solid rgba(236,72,153,0.18);
+      border-radius: 14px;
+      cursor: pointer;
+      margin-top: 12px;
+    }
+    .feeling-card .icon { font-size: 20px; }
+    .feeling-card .label { flex: 1; font-size: 15px; font-weight: 500; color: #111827; }
+    .feeling-card .chevron { font-size: 12px; color: #9ca3af; }
+
+    /* ── CALENDAR VIEW ── */
+    .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .month-nav button { background: none; border: none; cursor: pointer; font-size: 26px; color: rgba(59,130,246,0.8); }
+    .month-title { font-size: 18px; font-weight: 600; }
+    .weekdays { display: grid; grid-template-columns: repeat(7,1fr); margin-bottom: 6px; }
+    .weekday { text-align: center; font-size: 11px; font-weight: 600; color: #6b7280; padding: 4px 0; }
+    .days-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; }
+    .day-cell {
+      display: flex; align-items: center; justify-content: center;
+      height: 36px; border-radius: 50%; font-size: 15px; font-weight: 500;
+      cursor: pointer; color: #111827; transition: background 0.15s;
+    }
+    .day-cell:hover { background: rgba(59,130,246,0.1); }
+    .day-cell.today { color: #3b82f6; background: rgba(59,130,246,0.12); font-weight: 700; }
+    .day-cell.selected { background: #3b82f6 !important; color: white !important; }
+    .day-cell.other-month { color: rgba(107,114,128,0.4); }
+    .day-cell.empty { cursor: default; }
+
+    /* Goal card */
+    .goal-card { margin-top: 16px; }
+    .goal-card-label { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .goal-card-date { font-size: 13px; color: #6b7280; margin-bottom: 12px; }
+    .goal-stepper {
+      display: flex; align-items: center; justify-content: center; gap: 24px;
+      background: rgba(59,130,246,0.07); border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 14px; padding: 16px;
+    }
+    .goal-stepper button { background:none; border:none; font-size:32px; color:#3b82f6; cursor:pointer; }
+    .goal-stepper button:disabled { color:#d1d5db; }
+    .goal-value { font-size: 36px; font-weight: 700; color: #3b82f6; min-width: 60px; text-align: center; }
+    .goal-unit { font-size: 16px; font-weight: 500; color: #6b7280; }
+    .goal-ml { font-size: 14px; color: #9ca3af; margin-top: 8px; text-align: center; }
+
+    /* ── LIMITIZE VIEW ── */
+    .limitize-subtitle { font-size: 14px; font-weight: 500; color: rgba(107,114,128,0.85); margin-bottom: 16px; }
+    .coffee-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .coffee-card {
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(12px);
+      border-radius: 18px;
+      border: 1px solid rgba(0,0,0,0.06);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    .coffee-card:active { transform: scale(0.96); }
+    .ring-wrap { position: relative; width: 100px; height: 100px; }
+    .ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-pct {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: 18px; font-weight: 700;
+    }
+    .coffee-name { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.3; }
+
+    /* Water chaser toast */
+    .toast {
+      position: absolute;
+      bottom: 90px;
+      left: 20px; right: 20px;
+      background: rgba(30,30,50,0.92);
+      backdrop-filter: blur(12px);
+      border-radius: 16px;
+      padding: 16px 20px;
+      color: white;
+      z-index: 500;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transform: translateY(30px);
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+    .toast.visible { transform: translateY(0); opacity: 1; pointer-events: all; }
+    .toast-title { font-size: 15px; font-weight: 600; }
+    .toast-msg { font-size: 13px; opacity: 0.75; }
+    .toast-btns { display: flex; gap: 10px; }
+    .toast-btn {
+      flex: 1; padding: 8px; border-radius: 10px; border: none;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .toast-btn-primary { background: #3b82f6; color: white; }
+    .toast-btn-secondary { background: rgba(255,255,255,0.15); color: white; }
+
+    /* ── STATISTICS VIEW ── */
+    .stats-period { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .period-btn {
+      padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(59,130,246,0.3);
+      background: none; font-size: 13px; font-weight: 500; color: #6b7280; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .period-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+    .chart-wrap { position: relative; }
+    .chart-bars {
+      display: flex; align-items: flex-end; gap: 6px; height: 120px;
+      border-bottom: 1px solid rgba(59,130,246,0.15); padding-bottom: 4px;
+    }
+    .chart-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .chart-bar {
+      width: 100%; background: linear-gradient(180deg, #67e8f9, #3b82f6);
+      border-radius: 6px 6px 0 0; min-height: 4px;
+      transition: height 0.5s ease;
+    }
+    .chart-label { font-size: 9px; color: #9ca3af; }
+    .stats-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .stat-card {
+      background: rgba(59,130,246,0.06);
+      border: 1px solid rgba(59,130,246,0.12);
+      border-radius: 14px; padding: 14px;
+    }
+    .stat-label { font-size: 11px; font-weight: 500; color: #9ca3af; margin-bottom: 6px; }
+    .stat-value { font-size: 22px; font-weight: 700; color: #3b82f6; }
+    .stat-unit { font-size: 12px; color: #6b7280; }
+    .streak-card {
+      background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(239,68,68,0.07));
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 14px; padding: 16px;
+      display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .streak-icon { font-size: 32px; }
+    .streak-text { flex: 1; }
+    .streak-num { font-size: 28px; font-weight: 700; color: #f59e0b; }
+    .streak-label { font-size: 13px; color: #6b7280; }
+
+    /* ── SETTINGS SHEET ── */
+    .sheet {
+      position: absolute; inset: 0; z-index: 600;
+      display: none; flex-direction: column;
+    }
+    .sheet.open { display: flex; }
+    .sheet-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.3); }
+    .sheet-panel {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: rgba(245,248,255,0.97);
+      backdrop-filter: blur(20px);
+      border-radius: 24px 24px 0 0;
+      padding: 20px 24px 40px;
+      max-height: 70%;
+      overflow-y: auto;
+    }
+    .sheet-handle {
+      width: 40px; height: 5px; background: #d1d5db;
+      border-radius: 3px; margin: 0 auto 20px;
+    }
+    .sheet-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0; border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .setting-label { font-size: 15px; font-weight: 500; }
+    .setting-value { font-size: 14px; color: #6b7280; }
+    .toggle {
+      width: 44px; height: 26px; background: #d1d5db;
+      border-radius: 13px; position: relative; cursor: pointer; transition: background 0.2s;
+      border: none;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: #3b82f6; }
+    .toggle::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 20px; height: 20px; background: white; border-radius: 50%;
+      transition: transform 0.2s; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* ── FEELING SHEET ── */
+    .feelings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    .feeling-opt {
+      padding: 16px; border-radius: 14px; text-align: center; cursor: pointer;
+      background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.12);
+      transition: all 0.2s;
+    }
+    .feeling-opt:hover { background: rgba(59,130,246,0.12); border-color: #3b82f6; }
+    .feeling-opt.selected { background: #3b82f6; color: white; border-color: #3b82f6; }
+    .feeling-opt .feeling-emoji { font-size: 28px; margin-bottom: 6px; }
+    .feeling-opt .feeling-name { font-size: 13px; font-weight: 600; }
+    .feeling-opt .feeling-tip { font-size: 11px; margin-top: 4px; opacity: 0.7; }
+
+    /* ── ONBOARDING ── */
+    #onboarding {
+      position: absolute; inset: 0; z-index: 800;
+      background: linear-gradient(160deg, rgba(59,130,246,0.10) 0%, rgba(6,182,212,0.06) 100%);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 60px 24px 40px;
+    }
+    .ob-dots { display: flex; gap: 8px; margin-bottom: 40px; }
+    .ob-dot {
+      height: 8px; border-radius: 4px; background: rgba(59,130,246,0.2);
+      transition: all 0.35s ease;
+    }
+    .ob-dot.active { background: #3b82f6; width: 24px; }
+    .ob-dot:not(.active) { width: 8px; }
+    .ob-icon-wrap {
+      width: 140px; height: 140px; border-radius: 50%;
+      background: rgba(6,182,212,0.1); display: flex; align-items: center; justify-content: center;
+      font-size: 70px; margin-bottom: 28px;
+    }
+    .ob-title { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 12px; }
+    .ob-sub { font-size: 16px; color: #6b7280; text-align: center; line-height: 1.5; margin-bottom: 32px; }
+    .ob-btn {
+      width: 100%; padding: 16px; border-radius: 14px; border: none;
+      background: linear-gradient(90deg, #06b6d4, #3b82f6); color: white;
+      font-size: 17px; font-weight: 600; cursor: pointer; margin-bottom: 12px;
+    }
+    .ob-skip { background: none; border: none; color: #9ca3af; font-size: 15px; cursor: pointer; }
+    /* goal step */
+    .goal-step-stepper {
+      display: flex; align-items: center; gap: 28px; justify-content: center;
+      background: rgba(59,130,246,0.07); border: 1px solid rgba(59,130,246,0.15);
+      border-radius: 20px; padding: 24px; margin-bottom: 32px; width: 100%;
+    }
+    .goal-step-stepper button { background:none; border:none; font-size:44px; color:#3b82f6; cursor:pointer; }
+    .goal-step-value { font-size: 52px; font-weight: 700; color: #3b82f6; min-width: 70px; text-align:center; }
+    .goal-step-unit { font-size: 14px; color: #6b7280; text-align: center; }
+    .goal-step-ml { font-size: 12px; color: #9ca3af; }
+
+    /* misc */
+    .small-link {
+      display: flex; align-items: center; gap: 6px;
+      color: #3b82f6; font-size: 13px; font-weight: 500;
+      margin-top: 8px; cursor: pointer; background: none; border: none;
+    }
+    .mt-8 { margin-top: 8px; }
+    .mt-12 { margin-top: 12px; }
+  </style>
+</head>
+<body>
+<div class="phone">
+  <!-- Notch -->
+  <div class="dynamic-island"></div>
+
+  <!-- ── ONBOARDING ── -->
+  <div id="onboarding">
+    <!-- Step 0: Welcome -->
+    <div id="ob-step-0" class="ob-step">
+      <div class="ob-dots">
+        <div class="ob-dot active"></div>
+        <div class="ob-dot"></div>
+        <div class="ob-dot"></div>
+      </div>
+      <div class="ob-icon-wrap">💧</div>
+      <div class="ob-title">Bottle of Water</div>
+      <div class="ob-sub">Your gentle hydration companion.<br>Track water, balance coffee, feel great.</div>
+      <button class="ob-btn" onclick="obNext()">Get Started</button>
+    </div>
+    <!-- Step 1: Goal -->
+    <div id="ob-step-1" class="ob-step" style="display:none; width:100%; align-items:center; flex-direction:column">
+      <div class="ob-dots">
+        <div class="ob-dot"></div>
+        <div class="ob-dot active"></div>
+        <div class="ob-dot"></div>
+      </div>
+      <div class="ob-icon-wrap" style="background:rgba(59,130,246,0.09)">🎯</div>
+      <div class="ob-title">Set your daily goal</div>
+      <div class="ob-sub">How many glasses of water do you want to drink each day?</div>
+      <div class="goal-step-stepper">
+        <button onclick="changeGoal(-1)" id="ob-minus">➖</button>
+        <div>
+          <div class="goal-step-value" id="ob-goal-val">8</div>
+          <div class="goal-step-unit">glasses / day</div>
+          <div class="goal-step-ml" id="ob-goal-ml">≈ 2000 ml</div>
+        </div>
+        <button onclick="changeGoal(1)" id="ob-plus">➕</button>
+      </div>
+      <button class="ob-btn" onclick="obNext()">Continue</button>
+    </div>
+    <!-- Step 2: Notifications -->
+    <div id="ob-step-2" class="ob-step" style="display:none; width:100%; align-items:center; flex-direction:column">
+      <div class="ob-dots">
+        <div class="ob-dot"></div>
+        <div class="ob-dot"></div>
+        <div class="ob-dot active"></div>
+      </div>
+      <div class="ob-icon-wrap" id="ob-notif-icon" style="background:rgba(251,146,60,0.08)">🔔</div>
+      <div class="ob-title">Stay reminded</div>
+      <div class="ob-sub">Get gentle notifications at the right moments—morning, after coffee, before bed, and more.</div>
+      <button class="ob-btn" id="ob-notif-btn" onclick="enableNotifications()">Enable Notifications</button>
+      <button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>
+    </div>
+  </div>
+
+  <!-- ── MAIN APP ── -->
+  <div class="screen" id="main-app" style="display:none">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <div class="greeting" id="greeting-text">☀️ Good Morning</div>
+        <div class="header-btns">
+          <button class="header-btn" onclick="openMoments()" title="Water Moments">🔔</button>
+          <button class="header-btn" onclick="openSettings()" title="Settings">⚙️</button>
+        </div>
+      </div>
+      <div class="advice" id="advice-text">Start your day with a glass of water.</div>
+    </div>
+
+    <!-- ── HOME ── -->
+    <div class="view active" id="view-home">
+      <div class="scroll-content">
+        <div class="section-title">Bottle of Water</div>
+
+        <!-- Mascot -->
+        <div class="mascot-wrap">
+          <div class="mascot" onclick="logWater()" title="Tap to log water!">
+            <div class="water-body" id="water-body">
+              <div class="wave"></div>
+              <div class="wave wave2"></div>
+            </div>
+            <div class="mascot-face" id="mascot-face">🙂</div>
+            <div class="mascot-tap-hint">Tap to drink!</div>
+          </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-badge" style="margin-top:32px">
+          <div class="drop">💧</div>
+          <div class="progress-count"><span id="glasses-current">0</span> / <span id="glasses-goal">8</span></div>
+          <div class="progress-glasses">glasses</div>
+          <div class="progress-ml" id="progress-ml">(≈ 2000 ml goal)</div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-row">
+          <button class="btn-minus" id="btn-minus" onclick="removeWater()" disabled title="Remove glass">➖</button>
+          <button class="btn-add" onclick="logWater()">
+            <span>➕</span> Add glass
+          </button>
+        </div>
+
+        <!-- Measure link -->
+        <button class="small-link" onclick="alert('📷 Camera-based glass volume measurement.\n(This feature requires a real device.)')">
+          📷 Measure glass volume
+        </button>
+
+        <!-- Feeling -->
+        <div class="feeling-card mt-12" onclick="openFeeling()">
+          <div class="icon">❤️</div>
+          <div class="label">How do you feel?</div>
+          <div class="chevron">›</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CALENDAR ── -->
+    <div class="view" id="view-calendar">
+      <div class="scroll-content">
+        <div class="section-title">Calendar</div>
+        <div class="card">
+          <div class="month-nav">
+            <button onclick="prevMonth()">⬅️</button>
+            <div class="month-title" id="month-title">March 2026</div>
+            <button onclick="nextMonth()">➡️</button>
+          </div>
+          <div class="weekdays">
+            <div class="weekday">Sun</div><div class="weekday">Mon</div><div class="weekday">Tue</div>
+            <div class="weekday">Wed</div><div class="weekday">Thu</div><div class="weekday">Fri</div>
+            <div class="weekday">Sat</div>
+          </div>
+          <div class="days-grid" id="days-grid"></div>
+        </div>
+        <div class="card goal-card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:20px;color:#06b6d4">💧</span>
+            <div class="goal-card-label" id="goal-card-label">Today's water goal</div>
+          </div>
+          <div class="goal-card-date" id="goal-card-date">March 16, 2026</div>
+          <div class="goal-stepper">
+            <button onclick="calChangeGoal(-1)" id="cal-minus">➖</button>
+            <div>
+              <div class="goal-value" id="cal-goal-val">8</div>
+              <div class="goal-unit">glasses</div>
+            </div>
+            <button onclick="calChangeGoal(1)" id="cal-plus">➕</button>
+          </div>
+          <div class="goal-ml" id="cal-goal-ml">≈ 2000 ml</div>
+          <div style="font-size:12px;color:#9ca3af;margin-top:8px">This goal is shown on the Home screen for that day.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LIMITIZE ── -->
+    <div class="view" id="view-limitize">
+      <div class="scroll-content">
+        <div class="section-title">Limitize</div>
+        <div class="limitize-subtitle">Tap to log coffee. Balance with water!</div>
+        <div class="coffee-grid" id="coffee-grid"></div>
+      </div>
+      <!-- Water chaser toast -->
+      <div class="toast" id="water-toast">
+        <div class="toast-title">💧 Water chaser?</div>
+        <div class="toast-msg">Balance coffee with a glass of water. It helps hydration!</div>
+        <div class="toast-btns">
+          <button class="toast-btn toast-btn-primary" onclick="addWaterFromToast()">Add water</button>
+          <button class="toast-btn toast-btn-secondary" onclick="dismissToast()">Maybe later</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STATISTICS ── -->
+    <div class="view" id="view-statistics">
+      <div class="scroll-content">
+        <div class="section-title">Statistics</div>
+        <div class="streak-card">
+          <div class="streak-icon">🔥</div>
+          <div class="streak-text">
+            <div class="streak-num" id="streak-num">3</div>
+            <div class="streak-label">day streak</div>
+          </div>
+        </div>
+        <div class="stats-period">
+          <button class="period-btn active" onclick="setPeriod(this,'week')">Week</button>
+          <button class="period-btn" onclick="setPeriod(this,'month')">Month</button>
+          <button class="period-btn" onclick="setPeriod(this,'year')">Year</button>
+        </div>
+        <div class="card">
+          <div style="font-size:13px;font-weight:600;color:#6b7280;margin-bottom:12px" id="chart-period-label">Weekly Intake</div>
+          <div class="chart-bars" id="chart-bars"></div>
+          <div style="display:flex;margin-top:4px" id="chart-labels"></div>
+        </div>
+        <div class="stats-cards">
+          <div class="stat-card">
+            <div class="stat-label">DAILY AVERAGE</div>
+            <div><span class="stat-value" id="stat-avg">6</span> <span class="stat-unit">glasses</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">BEST DAY</div>
+            <div><span class="stat-value" id="stat-best">10</span> <span class="stat-unit">glasses</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">TOTAL ML</div>
+            <div><span class="stat-value" id="stat-total">10500</span> <span class="stat-unit">ml</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">GOAL MET</div>
+            <div><span class="stat-value" id="stat-met">4</span> <span class="stat-unit">days</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-item active" onclick="switchTab('home',this)">
+        <div class="tab-icon">🏠</div>
+        <div class="tab-label">Home</div>
+      </button>
+      <button class="tab-item" onclick="switchTab('calendar',this)">
+        <div class="tab-icon">📅</div>
+        <div class="tab-label">Calendar</div>
+      </button>
+      <button class="tab-item" onclick="switchTab('limitize',this)">
+        <div class="tab-icon">🎯</div>
+        <div class="tab-label">Limitize</div>
+      </button>
+      <button class="tab-item" onclick="switchTab('statistics',this)">
+        <div class="tab-icon">📊</div>
+        <div class="tab-label">Statistics</div>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS SHEET ── -->
+  <div class="sheet" id="settings-sheet">
+    <div class="sheet-overlay" onclick="closeSettings()"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">⚙️ Settings</div>
+
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Glass Volume</div>
+          <div class="setting-value" id="glass-vol-label">250 ml per glass</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="changeGlassVol(-50)" style="background:none;border:1px solid #d1d5db;border-radius:8px;padding:4px 10px;cursor:pointer">−</button>
+          <button onclick="changeGlassVol(50)" style="background:none;border:1px solid #d1d5db;border-radius:8px;padding:4px 10px;cursor:pointer">+</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Notifications</div>
+        <button class="toggle on" id="notif-toggle" onclick="this.classList.toggle('on')"></button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">Daily Reminders</div>
+        <button class="toggle on" id="reminder-toggle" onclick="this.classList.toggle('on')"></button>
+      </div>
+      <div class="setting-row" style="border:none">
+        <div class="setting-label">Reset All Data</div>
+        <button onclick="resetData()" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#ef4444;border-radius:10px;padding:6px 14px;cursor:pointer;font-size:13px">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WATER MOMENTS SHEET ── -->
+  <div class="sheet" id="moments-sheet">
+    <div class="sheet-overlay" onclick="closeMoments()"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">💧 Water Moments</div>
+      <p style="font-size:14px;color:#6b7280;line-height:1.6">Your hydration log for today:</p>
+      <div id="moments-list" style="margin-top:16px;display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  </div>
+
+  <!-- ── FEELING SHEET ── -->
+  <div class="sheet" id="feeling-sheet">
+    <div class="sheet-overlay" onclick="closeFeeling()"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">How do you feel?</div>
+      <p style="font-size:14px;color:#6b7280">Tell us how your body feels so we can guide you better.</p>
+      <div class="feelings-grid">
+        <div class="feeling-opt" onclick="selectFeeling(this,'Great','You\'re well hydrated! Keep it up 💪')">
+          <div class="feeling-emoji">😁</div>
+          <div class="feeling-name">Great</div>
+          <div class="feeling-tip">Feeling awesome</div>
+        </div>
+        <div class="feeling-opt" onclick="selectFeeling(this,'Thirsty','Drink a glass of water now! 💧')">
+          <div class="feeling-emoji">😓</div>
+          <div class="feeling-name">Thirsty</div>
+          <div class="feeling-tip">Need water now</div>
+        </div>
+        <div class="feeling-opt" onclick="selectFeeling(this,'Headache','Dehydration can cause headaches. Try 2 glasses. 💙')">
+          <div class="feeling-emoji">🤕</div>
+          <div class="feeling-name">Headache</div>
+          <div class="feeling-tip">May need hydration</div>
+        </div>
+        <div class="feeling-opt" onclick="selectFeeling(this,'Tired','Even mild dehydration causes fatigue. Sip some water! 🌊')">
+          <div class="feeling-emoji">😴</div>
+          <div class="feeling-name">Tired</div>
+          <div class="feeling-tip">Low energy</div>
+        </div>
+      </div>
+      <div id="feeling-advice" style="display:none;margin-top:16px;padding:14px;background:rgba(59,130,246,0.07);border-radius:12px;font-size:14px;color:#374151"></div>
+    </div>
+  </div>
+</div><!-- /phone -->
+
+<script>
+  /* ──────────────────────────────────────────
+     STATE
+  ────────────────────────────────────────── */
+  const state = {
+    onboarded: false,
+    obStep: 0,
+    obGoal: 8,
+    glassVolumeML: 250,
+    todayGlasses: 0,
+    dailyGoal: 8,
+    calDate: new Date(2026, 2, 16), // March 16 2026
+    calGoal: 8,
+    waterMoments: [],
+    coffeeCounts: {},
+    coffeeItems: [
+      { id:'espresso',  name:'Espresso',       color:'#92400e', hex:'142, 64, 14'  },
+      { id:'turkish',   name:'Turkish Coffee', color:'#78350f', hex:'120, 53, 15'  },
+      { id:'americano', name:'Americano',      color:'#8b5cf6', hex:'139, 92, 246' },
+      { id:'decaf',     name:'Decaf Coffee',   color:'#a78bfa', hex:'167, 139, 250'},
+      { id:'latte',     name:'Latte',          color:'#d97706', hex:'217, 119, 6'  },
+      { id:'cappuccino',name:'Cappuccino',      color:'#b45309', hex:'180, 83, 9'  },
+      { id:'mocha',     name:'Mocha',          color:'#6d28d9', hex:'109, 40, 217' },
+      { id:'flatwhite', name:'Flat White',     color:'#c2410c', hex:'194, 65, 12'  },
+    ],
+    chartPeriod: 'week',
+  };
+
+  const advices = [
+    "Start your day with a glass of water.",
+    "Your body works better when you stay hydrated.",
+    "Drink water before you feel thirsty.",
+    "A sip now can prevent dehydration later.",
+    "Water helps keep your energy steady.",
+    "Hydration improves focus and clarity.",
+    "Keep water close, keep yourself healthy.",
+    "Drinking water supports your metabolism.",
+    "Make water your first choice, not soda.",
+    "A hydrated body is a happy body.",
+    "Drink water to support your digestion.",
+    "Water helps flush out toxins naturally.",
+    "Stay hydrated to reduce fatigue.",
+    "Your brain loves water—feed it often.",
+    "Drink water during breaks to recharge.",
+    "Hydration helps regulate body temperature.",
+    "Water keeps your joints moving smoothly.",
+    "A small sip is better than none.",
+    "Drink water after every meal.",
+    "Hydration supports better sleep quality.",
+  ];
+
+  /* ──────────────────────────────────────────
+     ONBOARDING
+  ────────────────────────────────────────── */
+  let obGoal = 8;
+
+  function changeGoal(delta) {
+    obGoal = Math.max(1, Math.min(20, obGoal + delta));
+    document.getElementById('ob-goal-val').textContent = obGoal;
+    document.getElementById('ob-goal-ml').textContent = `≈ ${obGoal * 250} ml`;
+    document.getElementById('ob-minus').disabled = obGoal <= 1;
+    document.getElementById('ob-plus').disabled  = obGoal >= 20;
+  }
+
+  function obNext() {
+    const cur = document.getElementById(`ob-step-${state.obStep}`);
+    cur.style.display = 'none';
+    if (state.obStep === 1) { state.dailyGoal = obGoal; state.calGoal = obGoal; }
+    state.obStep++;
+    if (state.obStep >= 3) { finishOnboarding(); return; }
+    const next = document.getElementById(`ob-step-${state.obStep}`);
+    next.style.display = 'flex';
+  }
+
+  function enableNotifications() {
+    const btn = document.getElementById('ob-notif-btn');
+    const icon = document.getElementById('ob-notif-icon');
+    icon.textContent = '🔔';
+    icon.style.background = 'rgba(34,197,94,0.1)';
+    btn.textContent = '✅ Notifications enabled!';
+    btn.style.background = '#22c55e';
+    setTimeout(() => finishOnboarding(), 800);
+  }
+
+  function finishOnboarding() {
+    document.getElementById('onboarding').style.display = 'none';
+    document.getElementById('main-app').style.display = 'flex';
+    updateGreeting();
+    updateAdvice();
+    renderCoffeeGrid();
+    renderCalendar();
+    renderChart('week');
+    updateHome();
+    state.onboarded = true;
+  }
+
+  /* ──────────────────────────────────────────
+     HEADER
+  ────────────────────────────────────────── */
+  function updateGreeting() {
+    const h = new Date().getHours();
+    let g = '🌙 Good Night';
+    if (h >= 5 && h < 12) g = '🌅 Good Morning';
+    else if (h >= 12 && h < 17) g = '☀️ Good Afternoon';
+    else if (h >= 17 && h < 22) g = '🌆 Good Evening';
+    document.getElementById('greeting-text').textContent = g;
+  }
+
+  function updateAdvice() {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(),0,0)) / 86400000);
+    document.getElementById('advice-text').textContent = advices[dayOfYear % advices.length];
+  }
+
+  /* ──────────────────────────────────────────
+     HOME
+  ────────────────────────────────────────── */
+  function updateHome() {
+    const g = state.todayGlasses;
+    const goal = state.dailyGoal;
+    document.getElementById('glasses-current').textContent = g;
+    document.getElementById('glasses-goal').textContent = goal;
+    document.getElementById('progress-ml').textContent = `(≈ ${goal * state.glassVolumeML} ml goal)`;
+    document.getElementById('btn-minus').disabled = g <= 0;
+
+    // mascot fill level
+    const pct = Math.min(1, g / goal);
+    const body = document.getElementById('water-body');
+    body.style.height = `${60 + pct * 130}px`;
+
+    // mascot face
+    const face = document.getElementById('mascot-face');
+    if (pct === 0) face.textContent = '😐';
+    else if (pct < 0.4) face.textContent = '🙂';
+    else if (pct < 0.8) face.textContent = '😊';
+    else if (pct < 1) face.textContent = '😄';
+    else face.textContent = '🥳';
+  }
+
+  function logWater() {
+    state.todayGlasses++;
+    state.waterMoments.push(new Date());
+    updateHome();
+    animateMascot();
+    // update streak
+    updateStreak();
+  }
+
+  function removeWater() {
+    if (state.todayGlasses <= 0) return;
+    state.todayGlasses--;
+    if (state.waterMoments.length > 0) state.waterMoments.pop();
+    updateHome();
+    updateStreak();
+  }
+
+  function animateMascot() {
+    const body = document.getElementById('water-body');
+    body.classList.remove('mascot-bounce');
+    void body.offsetWidth;
+    body.classList.add('mascot-bounce');
+  }
+
+  /* ──────────────────────────────────────────
+     CALENDAR
+  ────────────────────────────────────────── */
+  const MONTHS = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+
+  function renderCalendar() {
+    const d = state.calDate;
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    document.getElementById('month-title').textContent = `${MONTHS[month]} ${year}`;
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date(2026, 2, 16);
+
+    let html = '';
+    for (let i = 0; i < firstDay; i++) html += '<div class="day-cell empty"></div>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const isToday = date.toDateString() === today.toDateString();
+      const isSelected = date.toDateString() === state.calDate.toDateString();
+      let cls = 'day-cell';
+      if (isToday && !isSelected) cls += ' today';
+      if (isSelected) cls += ' selected';
+      html += `<div class="${cls}" onclick="selectDay(${year},${month},${day})">${day}</div>`;
+    }
+    document.getElementById('days-grid').innerHTML = html;
+    updateGoalCard();
+  }
+
+  function selectDay(y, m, d) {
+    state.calDate = new Date(y, m, d);
+    renderCalendar();
+  }
+
+  function prevMonth() {
+    state.calDate = new Date(state.calDate.getFullYear(), state.calDate.getMonth() - 1, 1);
+    renderCalendar();
+  }
+  function nextMonth() {
+    state.calDate = new Date(state.calDate.getFullYear(), state.calDate.getMonth() + 1, 1);
+    renderCalendar();
+  }
+
+  function updateGoalCard() {
+    const today = new Date(2026, 2, 16);
+    const isToday = state.calDate.toDateString() === today.toDateString();
+    const opts = { year:'numeric', month:'long', day:'numeric' };
+    document.getElementById('goal-card-label').textContent = isToday ? "Today's water goal" : "Water goal for this day";
+    document.getElementById('goal-card-date').textContent = state.calDate.toLocaleDateString('en-US', opts);
+    document.getElementById('cal-goal-val').textContent = state.calGoal;
+    document.getElementById('cal-goal-ml').textContent = `≈ ${state.calGoal * state.glassVolumeML} ml`;
+  }
+
+  function calChangeGoal(delta) {
+    state.calGoal = Math.max(1, Math.min(20, state.calGoal + delta));
+    if (state.calDate.toDateString() === new Date(2026,2,16).toDateString()) {
+      state.dailyGoal = state.calGoal;
+      updateHome();
+    }
+    updateGoalCard();
+  }
+
+  /* ──────────────────────────────────────────
+     LIMITIZE
+  ────────────────────────────────────────── */
+  function renderCoffeeGrid() {
+    const grid = document.getElementById('coffee-grid');
+    grid.innerHTML = state.coffeeItems.map(item => {
+      const count = state.coffeeCounts[item.id] || 0;
+      const pct = Math.min(1, count / 3);
+      const pctInt = Math.round(pct * 100);
+      const r = 44; const circ = 2 * Math.PI * r;
+      const dash = circ * pct;
+      return `
+        <div class="coffee-card" onclick="logCoffee('${item.id}')">
+          <div class="ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="${r}" fill="none" stroke="rgba(${item.hex},0.2)" stroke-width="8"/>
+              <circle cx="50" cy="50" r="${r}" fill="none" stroke="${item.color}" stroke-width="8"
+                stroke-linecap="round"
+                stroke-dasharray="${dash.toFixed(2)} ${(circ-dash).toFixed(2)}"
+                stroke-dashoffset="0"/>
+            </svg>
+            <div class="ring-pct" style="color:${item.color}">${pctInt}%</div>
+          </div>
+          <div class="coffee-name">${item.name}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function logCoffee(id) {
+    state.coffeeCounts[id] = Math.min(10, (state.coffeeCounts[id] || 0) + 1);
+    renderCoffeeGrid();
+    showToast();
+  }
+
+  let toastTimer;
+  function showToast() {
+    clearTimeout(toastTimer);
+    document.getElementById('water-toast').classList.add('visible');
+    toastTimer = setTimeout(dismissToast, 4000);
+  }
+  function dismissToast() {
+    document.getElementById('water-toast').classList.remove('visible');
+  }
+  function addWaterFromToast() {
+    logWater();
+    dismissToast();
+  }
+
+  /* ──────────────────────────────────────────
+     STATISTICS
+  ────────────────────────────────────────── */
+  function setPeriod(btn, period) {
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.chartPeriod = period;
+    renderChart(period);
+  }
+
+  function renderChart(period) {
+    let labels, values, periodLabel, avg, best, total, met;
+
+    if (period === 'week') {
+      labels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      values = [6,8,5,9,7,10,state.todayGlasses];
+      periodLabel = 'Weekly Intake';
+    } else if (period === 'month') {
+      labels = ['W1','W2','W3','W4'];
+      values = [42, 56, 48, 35 + state.todayGlasses];
+      periodLabel = 'Monthly Intake (weekly)';
+    } else {
+      labels = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+      values = [180,160,200,175,210,230,240,220,185,195,170,210];
+      periodLabel = 'Yearly Intake (monthly)';
+    }
+
+    document.getElementById('chart-period-label').textContent = periodLabel;
+    const maxVal = Math.max(...values, 1);
+    const bars = document.getElementById('chart-bars');
+    const labelsEl = document.getElementById('chart-labels');
+
+    bars.innerHTML = values.map((v, i) => `
+      <div class="chart-bar-col">
+        <div class="chart-bar" style="height:${(v/maxVal*110).toFixed(1)}px"></div>
+      </div>`).join('');
+
+    labelsEl.innerHTML = labels.map(l =>
+      `<div style="flex:1;text-align:center;font-size:9px;color:#9ca3af">${l}</div>`).join('');
+
+    // stats summary
+    avg = Math.round(values.reduce((a,b)=>a+b,0)/values.length);
+    best = Math.max(...values);
+    total = values.reduce((a,b)=>a+b,0) * state.glassVolumeML;
+    met = values.filter(v => v >= state.dailyGoal).length;
+    document.getElementById('stat-avg').textContent = avg;
+    document.getElementById('stat-best').textContent = best;
+    document.getElementById('stat-total').textContent = total.toLocaleString();
+    document.getElementById('stat-met').textContent = met;
+  }
+
+  function updateStreak() {
+    const base = 3;
+    document.getElementById('streak-num').textContent = state.todayGlasses > 0 ? base + 1 : base;
+  }
+
+  /* ──────────────────────────────────────────
+     TABS
+  ────────────────────────────────────────── */
+  function switchTab(tab, btn) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.tab-item').forEach(b => b.classList.remove('active'));
+    document.getElementById(`view-${tab}`).classList.add('active');
+    btn.classList.add('active');
+    if (tab === 'statistics') renderChart(state.chartPeriod);
+    if (tab === 'calendar') renderCalendar();
+    if (tab === 'limitize') renderCoffeeGrid();
+  }
+
+  /* ──────────────────────────────────────────
+     SHEETS
+  ────────────────────────────────────────── */
+  function openSettings() { document.getElementById('settings-sheet').classList.add('open'); }
+  function closeSettings() { document.getElementById('settings-sheet').classList.remove('open'); }
+
+  function openMoments() {
+    const list = document.getElementById('moments-list');
+    if (state.waterMoments.length === 0) {
+      list.innerHTML = '<div style="color:#9ca3af;font-size:14px">No water logged yet today.</div>';
+    } else {
+      list.innerHTML = state.waterMoments.map((t, i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(59,130,246,0.06);border-radius:10px">
+          <span style="font-size:18px">💧</span>
+          <div>
+            <div style="font-size:14px;font-weight:600">Glass #${i+1}</div>
+            <div style="font-size:12px;color:#9ca3af">${t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+          </div>
+        </div>`).join('');
+    }
+    document.getElementById('moments-sheet').classList.add('open');
+  }
+  function closeMoments() { document.getElementById('moments-sheet').classList.remove('open'); }
+
+  function openFeeling() { document.getElementById('feeling-sheet').classList.add('open'); }
+  function closeFeeling() {
+    document.getElementById('feeling-sheet').classList.remove('open');
+    document.getElementById('feeling-advice').style.display = 'none';
+    document.querySelectorAll('.feeling-opt').forEach(o => o.classList.remove('selected'));
+  }
+  function selectFeeling(el, name, advice) {
+    document.querySelectorAll('.feeling-opt').forEach(o => o.classList.remove('selected'));
+    el.classList.add('selected');
+    const adv = document.getElementById('feeling-advice');
+    adv.style.display = 'block';
+    adv.textContent = advice;
+  }
+
+  /* ──────────────────────────────────────────
+     SETTINGS ACTIONS
+  ────────────────────────────────────────── */
+  function changeGlassVol(delta) {
+    state.glassVolumeML = Math.max(50, Math.min(1000, state.glassVolumeML + delta));
+    document.getElementById('glass-vol-label').textContent = `${state.glassVolumeML} ml per glass`;
+    updateHome();
+    updateGoalCard();
+  }
+
+  function resetData() {
+    if (!confirm('Reset all water data for today?')) return;
+    state.todayGlasses = 0;
+    state.waterMoments = [];
+    state.coffeeCounts = {};
+    updateHome();
+    renderCoffeeGrid();
+    renderChart(state.chartPeriod);
+    closeSettings();
+  }
+
+  /* init */
+  document.addEventListener('DOMContentLoaded', () => {
+    // nothing — onboarding shows on load
+  });
+</script>
+</body>
+</html>

@@ -42,6 +42,184 @@
       z-index: 999;
     }
 
+    /* ── Launch Screen ── */
+    #launch-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      overflow: hidden;
+    }
+    .launch-bg {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(170deg, rgba(59,130,246,0.18) 0%, rgba(6,182,212,0.10) 100%);
+      backdrop-filter: blur(0px);
+    }
+
+    /* Background ripple rings */
+    .launch-ripple {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      border-radius: 50%;
+      border: 2px solid rgba(59,130,246,0.25);
+      pointer-events: none;
+    }
+    .r1 { width: 160px; height: 160px; animation: ripple-grow 3s 0.3s ease-out infinite; }
+    .r2 { width: 260px; height: 260px; animation: ripple-grow 3s 0.7s ease-out infinite; }
+    .r3 { width: 380px; height: 380px; animation: ripple-grow 3s 1.1s ease-out infinite; }
+    @keyframes ripple-grow {
+      0%   { transform: translate(-50%,-50%) scale(0); opacity: 0.7; }
+      100% { transform: translate(-50%,-50%) scale(1);  opacity: 0; }
+    }
+
+    /* Mascot container */
+    .launch-mascot-wrap {
+      position: relative;
+      width: 160px;
+      height: 240px;
+      margin-bottom: 28px;
+      z-index: 2;
+      /* start scaled down, animate in */
+      animation: launch-mascot-in 0.7s 0.2s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes launch-mascot-in {
+      from { transform: scale(0.4); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* Water body */
+    .launch-water-body {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 60px; /* starts empty, JS fills it */
+      background: linear-gradient(180deg, #67e8f9 0%, #3b82f6 100%);
+      border-radius: 60% 60% 40% 40% / 40% 40% 60% 60%;
+      overflow: hidden;
+      transition: height 0.4s cubic-bezier(.34,1.56,.64,1);
+    }
+    .launch-wave {
+      position: absolute;
+      top: 0; left: -50%;
+      width: 200%; height: 22px;
+      background: rgba(255,255,255,0.3);
+      border-radius: 50%;
+      animation: lwave 2.2s linear infinite;
+    }
+    .lw2 { animation-delay: -1.1s; opacity: 0.45; }
+    .lw3 { animation-delay: -0.55s; opacity: 0.25; top: 6px; }
+    @keyframes lwave { 0%{transform:translateX(-30%)} 100%{transform:translateX(30%)} }
+
+    /* Face */
+    .launch-face {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 36px;
+      text-align: center;
+      transition: all 0.3s ease;
+      z-index: 3;
+    }
+
+    /* Falling drop */
+    .launch-drop-fall {
+      position: absolute;
+      top: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 28px;
+      opacity: 0;
+      z-index: 4;
+    }
+    .launch-drop-fall.falling {
+      animation: drop-fall 0.55s cubic-bezier(.55,.06,.68,.19) forwards;
+    }
+    @keyframes drop-fall {
+      0%   { top: -60px; opacity: 1; transform: translateX(-50%) scale(1); }
+      80%  { top: 170px; opacity: 1; transform: translateX(-50%) scale(1); }
+      100% { top: 180px; opacity: 0; transform: translateX(-50%) scale(0.3); }
+    }
+
+    /* Splash ring */
+    .launch-splash {
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%) scale(0);
+      width: 120px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid rgba(6,182,212,0.6);
+      pointer-events: none;
+    }
+    .launch-splash.splashing {
+      animation: splash-ring 0.45s ease-out forwards;
+    }
+    @keyframes splash-ring {
+      0%   { transform: translateX(-50%) scale(0);   opacity: 1; }
+      100% { transform: translateX(-50%) scale(1.6); opacity: 0; }
+    }
+
+    /* Complete celebration ring */
+    .launch-complete-ring {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%,-50%) scale(0);
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(6,182,212,0.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .launch-complete-ring.pop {
+      animation: complete-pop 0.5s ease-out forwards;
+    }
+    @keyframes complete-pop {
+      0%   { transform: translate(-50%,-50%) scale(0); opacity: 1; }
+      60%  { transform: translate(-50%,-50%) scale(1.2); opacity: 0.8; }
+      100% { transform: translate(-50%,-50%) scale(2);   opacity: 0; }
+    }
+
+    /* Title & sub */
+    .launch-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1e40af;
+      z-index: 2;
+      letter-spacing: -0.3px;
+      animation: launch-title-in 0.6s 0.6s ease both;
+    }
+    .launch-sub {
+      font-size: 14px;
+      color: #6b7280;
+      z-index: 2;
+      margin-top: 6px;
+      animation: launch-title-in 0.6s 0.8s ease both;
+    }
+    @keyframes launch-title-in {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Full screen fade-out transition */
+    #launch-screen.fade-out {
+      animation: launch-fade-out 0.55s ease forwards;
+    }
+    @keyframes launch-fade-out {
+      0%   { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.06); pointer-events: none; }
+    }
+
     /* ── Screen ── */
     .screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
 
@@ -465,6 +643,40 @@
 <div class="phone">
   <!-- Notch -->
   <div class="dynamic-island"></div>
+
+  <!-- ── LAUNCH SCREEN ── -->
+  <div id="launch-screen">
+    <!-- Background gradient matching LaunchScreenView -->
+    <div class="launch-bg"></div>
+
+    <!-- Ripple rings -->
+    <div class="launch-ripple r1"></div>
+    <div class="launch-ripple r2"></div>
+    <div class="launch-ripple r3"></div>
+
+    <!-- Mascot (same as home) -->
+    <div class="launch-mascot-wrap" id="launch-mascot-wrap">
+      <div class="launch-water-body" id="launch-water-body">
+        <div class="launch-wave"></div>
+        <div class="launch-wave lw2"></div>
+        <div class="launch-wave lw3"></div>
+      </div>
+      <div class="launch-face" id="launch-face">🙂</div>
+
+      <!-- Drop falling animation -->
+      <div class="launch-drop-fall" id="launch-drop-fall">💧</div>
+
+      <!-- Splash ring when drop hits -->
+      <div class="launch-splash" id="launch-splash"></div>
+    </div>
+
+    <!-- App name -->
+    <div class="launch-title" id="launch-title">Bottle of Water</div>
+    <div class="launch-sub" id="launch-sub">Your hydration companion</div>
+
+    <!-- Ripple on fill-up complete -->
+    <div class="launch-complete-ring" id="launch-complete-ring"></div>
+  </div>
 
   <!-- ── ONBOARDING ── -->
   <div id="onboarding">
@@ -1174,9 +1386,68 @@
     closeSettings();
   }
 
+  /* ──────────────────────────────────────────
+     LAUNCH SCREEN ANIMATION
+  ────────────────────────────────────────── */
+  function runLaunchAnimation() {
+    const body   = document.getElementById('launch-water-body');
+    const face   = document.getElementById('launch-face');
+    const drop   = document.getElementById('launch-drop-fall');
+    const splash = document.getElementById('launch-splash');
+    const ring   = document.getElementById('launch-complete-ring');
+
+    const GLASS_VOLUME = 190; // px height at 100%
+    const DROPS = 4;
+    let dropsLanded = 0;
+
+    function doOneDrop(i) {
+      setTimeout(() => {
+        // show drop
+        drop.classList.remove('falling');
+        void drop.offsetWidth; // reflow
+        drop.classList.add('falling');
+
+        // when drop lands → fill water + splash
+        setTimeout(() => {
+          dropsLanded++;
+          const fillPct = dropsLanded / DROPS;
+          const newH = 40 + fillPct * GLASS_VOLUME;
+          body.style.height = newH + 'px';
+
+          // update face
+          if (fillPct < 0.4) face.textContent = '🙂';
+          else if (fillPct < 0.75) face.textContent = '😊';
+          else if (fillPct < 1) face.textContent = '😄';
+          else face.textContent = '🥳';
+
+          // splash
+          splash.classList.remove('splashing');
+          void splash.offsetWidth;
+          splash.classList.add('splashing');
+
+          // last drop → celebration + exit
+          if (dropsLanded === DROPS) {
+            setTimeout(() => {
+              ring.classList.add('pop');
+              setTimeout(exitLaunch, 550);
+            }, 350);
+          }
+        }, 480);
+      }, i * 680);
+    }
+
+    for (let i = 0; i < DROPS; i++) doOneDrop(i);
+  }
+
+  function exitLaunch() {
+    const ls = document.getElementById('launch-screen');
+    ls.classList.add('fade-out');
+    setTimeout(() => { ls.style.display = 'none'; }, 550);
+  }
+
   /* init */
   document.addEventListener('DOMContentLoaded', () => {
-    // nothing — onboarding shows on load
+    runLaunchAnimation();
   });
 </script>
 </body>
